@@ -120,7 +120,19 @@ Gizli sekme ve `FLAG_SECURE` kullanan uygulamalarda MediaProjection **tamamen si
 | Erişilebilirlik / URL | **Hayır** | Alan adı bazlı, gizli sekmede de çalışır |
 | Private DNS | **Hayır** | Sistem genelinde, tüm uygulamalar |
 
-**Siyah kare tespiti** (`BlackFrameDetector.kt`): FLAG_SECURE karesi mükemmel siyahtır (tüm piksel 0). Gerçek koyu ekranda durum çubuğu, gezinme çubuğu, antialiasing yüzünden her zaman varyans olur. Ortalama parlaklık **ve** varyans birlikte kontrol edilerek ayırt ediliyor. 4 ardışık siyah kare → blok. Politika `SecurePolicy.BLOCK_ON_SECURE_BLACK` ile kapatılabilir.
+**Korumalı içerik tespiti** üç biçimde çalışıyor, çünkü kaynağa göre belirti değişiyor:
+
+| Biçim | Ne olur | Nerede görülür |
+|---|---|---|
+| Açık hata | `takeScreenshot` `ERROR_TAKE_SCREENSHOT_SECURE_WINDOW` döner | Erişilebilirlik yolu — kesin sinyal, 2 kare |
+| Hiç kare gelmez | VirtualDisplay üretmeyi bırakır | MediaProjection yolu, 6 tick |
+| Siyah kare | Kare gelir ama tüm pikseller 0 | `BlackFrameDetector`, 4 kare |
+
+**Bu kural yalnızca `Config.BROWSER_PACKAGES` içindeki uygulamalarda işler.** Sebep önemli: FLAG_SECURE'u meşru kullanan çok uygulama var — bankacılık, şifre yöneticileri, DRM'li video, 2FA ekranları. Ayrım olmadan "göremiyorum = blokla" kuralı bunların hepsini kullanılamaz hale getirir; bankacılık uygulamanı açar, iki saniye sonra ana ekrana atılırsın. Gizli sekme ise bir tarayıcı olgusu olduğu için kör nokta bu daralmayla kapanmaya devam ediyor.
+
+Bedeli: listede olmayan bir tarayıcının gizli sekmesi kaçar. Bilinçli takas — yanlış tarafta hata yapmak bankacılık uygulamanı bozmaktan iyidir.
+
+Uygulama içinden **"Gizli sekmeyi engelle"** ile tamamen kapatılabilir. Gizli sekmeyi normal işleri için kullanıyorsan kapat.
 
 **Erişilebilirlik katmanı** (`PerdeAccessibilityService.kt`): FLAG_SECURE render edilmiş yüzeyi korur, accessibility node tree'yi korumaz. Gizli sekmede ekran siyah gelirken adres çubuğu metni hâlâ okunabilir. Kurulum: Ayarlar > Erişilebilirlik > Perde.
 

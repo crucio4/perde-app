@@ -74,6 +74,14 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        SecurePolicy.load(this)
+        findViewById<CheckBox>(R.id.checkBlockSecure).apply {
+            isChecked = SecurePolicy.blockOnSecure
+            setOnCheckedChangeListener { _, v ->
+                SecurePolicy.save(this@MainActivity, v)
+            }
+        }
+
         findViewById<Button>(R.id.btnOverlayPerm).setOnClickListener {
             startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                 Uri.parse("package:$packageName")))

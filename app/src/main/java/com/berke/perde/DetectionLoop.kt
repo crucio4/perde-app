@@ -63,6 +63,7 @@ class DetectionLoop(
         // servisi yeniden baglaninca). Hassasiyet statik bir alanda tutuldugu
         // icin o durumda varsayilana donuyordu — prefs'ten okumak sart.
         Hassasiyet.load(ctx)
+        SecurePolicy.load(ctx)
 
         diag.edit()
             .putBoolean(ScreenGuardService.D_MODEL_OK, classifier.isReady())
@@ -117,12 +118,20 @@ class DetectionLoop(
 
         if (!source.isRunning() && !source.start()) return
 
+        // "Göremiyorum" durumunu blok sebebi saymak YALNIZCA tarayıcılarda
+        // geçerli. Bankacılık uygulamaları, şifre yöneticileri, DRM'li video
+        // ve 2FA ekranları da FLAG_SECURE kullanıyor; bu kapı olmadan hepsi
+        // bloklanır ve telefon kullanılamaz hale gelirdi. Gizli sekme ise
+        // bir tarayıcı olgusu, yani kör nokta bu daralmayla kapanmaya devam
+        // ediyor.
+        val korumaliBlokla = SecurePolicy.blockOnSecure && Config.isBrowser(pkg)
+
         // --- FLAG_SECURE, 1. biçim: kaynak açıkça "göremiyorum" diyor ---
         // takeScreenshot ERROR_TAKE_SCREENSHOT_SECURE_WINDOW döndürüyor.
         // Bu tahmin değil kesin bilgi, o yüzden eşik düşük tutuldu.
         if (source.isSecureBlocked()) {
             secureErrorStreak++
-            if (SecurePolicy.BLOCK_ON_SECURE_BLACK &&
+            if (korumaliBlokla &&
                 secureErrorStreak >= SecurePolicy.SECURE_ERROR_FRAMES_REQUIRED &&
                 !overlay.isShowing()
             ) {
@@ -141,7 +150,7 @@ class DetectionLoop(
         // MediaProjection gizli sekmede siyah kare değil, HİÇ kare üretmiyor.
         if (frame == null) {
             starvedTicks++
-            if (SecurePolicy.BLOCK_ON_SECURE_BLACK &&
+            if (korumaliBlokla &&
                 starvedTicks >= SecurePolicy.SECURE_STARVED_TICKS_REQUIRED &&
                 !overlay.isShowing()
             ) {
@@ -157,7 +166,7 @@ class DetectionLoop(
         val black = blackDetector.analyze(frame)
         if (black.isSecureBlack) {
             secureBlackStreak++
-            if (SecurePolicy.BLOCK_ON_SECURE_BLACK &&
+            if (korumaliBlokla &&
                 secureBlackStreak >= SecurePolicy.SECURE_BLACK_FRAMES_REQUIRED &&
                 !overlay.isShowing()
             ) {

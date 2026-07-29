@@ -13,6 +13,8 @@
     <string name="label_language">Language</string>
     <string name="label_sensitivity">Sensitivity</string>
     <string name="label_show_original">Show original scripture text</string>
+    <string name="label_block_secure">Block private browsing</string>
+    <string name="hint_block_secure">If the screen cannot be read in a browser, it is treated as a private tab and blocked. Browsers only — banking apps, password managers and DRM video are unaffected.</string>
 
     <string name="profile_muslim">Muslim</string>
     <string name="profile_christian">Christian</string>

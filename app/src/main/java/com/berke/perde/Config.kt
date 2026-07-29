@@ -131,6 +131,41 @@ object Config {
     )
 
     /**
+     * Tarayıcılar.
+     *
+     * "Korumalı içerik" sinyalinin blok sebebi sayıldığı TEK yer burası.
+     *
+     * Neden: kapatmak istediğimiz kör nokta gizli sekme, o da bir tarayıcı
+     * olgusu. FLAG_SECURE'u meşru kullanan bir sürü uygulama var —
+     * bankacılık, şifre yöneticileri, DRM'li video, 2FA ekranları. Bu
+     * ayrım olmadan "göremiyorum = blokla" kuralı onların hepsini
+     * kullanılamaz hale getirir: uygulamayı açarsın, iki saniye sonra
+     * ana ekrana atılırsın.
+     *
+     * Bedeli: listede olmayan bir tarayıcının gizli sekmesi kaçar. Bu
+     * bilinçli takas — yanlış tarafta hata yapmak bankacılık uygulamanı
+     * bozmaktan iyidir.
+     */
+    val BROWSER_PACKAGES = setOf(
+        "com.android.chrome",
+        "com.chrome.beta", "com.chrome.dev", "com.chrome.canary",
+        "com.brave.browser",
+        "org.mozilla.firefox", "org.mozilla.focus", "org.mozilla.fenix",
+        "com.opera.browser", "com.opera.mini.native", "com.opera.gx",
+        "com.sec.android.app.sbrowser",
+        "com.duckduckgo.mobile.android",
+        "com.microsoft.emmx",
+        "com.vivaldi.browser",
+        "com.kiwibrowser.browser",
+        "com.yandex.browser",
+        "com.UCMobile.intl",
+        "mark.via.gp",
+        "org.torproject.torbrowser"
+    )
+
+    fun isBrowser(pkg: String?): Boolean = pkg != null && pkg in BROWSER_PACKAGES
+
+    /**
      * WHITELIST modunda izlenecek paketler.
      * BLACKLIST modunda kullanılmaz.
      */
@@ -156,18 +191,35 @@ object Config {
 // ---------------------------------------------------------------
 object SecurePolicy {
 
+    private const val PREFS = "perde"
+    private const val KEY = "block_on_secure"
+
     /**
-     * İzlenen uygulama öndeyken kare tamamen siyah geliyorsa
-     * (= FLAG_SECURE aktif, gizli sekme ya da korumalı içerik)
-     * ne yapılsın?
+     * Tarayıcıda ekran okunamıyorsa (= gizli sekme) bloklansın mı?
      *
-     * true  : blokla. Sıkı ama tutarlı — "göremiyorsam izin vermem".
-     * false : sadece logla, bloklama.
+     * true  : blokla. "Göremiyorsam izin vermem."
+     * false : gizli sekme kör nokta olarak kalır.
      *
-     * Not: Netflix, bankacılık uygulaması gibi meşru FLAG_SECURE
-     * kullanan uygulamaları WATCHED_PACKAGES'a koymazsan sorun olmaz.
+     * ÖNEMLİ: bu kural yalnızca Config.BROWSER_PACKAGES içindeki
+     * uygulamalarda işler. Bankacılık, şifre yöneticisi, DRM'li video ve
+     * 2FA ekranları da FLAG_SECURE kullanıyor; ayrım olmasa hepsi
+     * bloklanır ve uygulama kullanılamaz hale gelirdi.
+     *
+     * Gizli sekmeyi normal işleri için kullanan biri bunu kapatabilir.
      */
-    const val BLOCK_ON_SECURE_BLACK = true
+    @Volatile
+    var blockOnSecure = true
+
+    fun load(ctx: android.content.Context) {
+        blockOnSecure = ctx.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
+            .getBoolean(KEY, true)
+    }
+
+    fun save(ctx: android.content.Context, value: Boolean) {
+        blockOnSecure = value
+        ctx.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
+            .edit().putBoolean(KEY, value).apply()
+    }
 
     /** Kaç ardışık siyah kare sonrası tetiklensin. Geçiş animasyonlarını eler. */
     const val SECURE_BLACK_FRAMES_REQUIRED = 4

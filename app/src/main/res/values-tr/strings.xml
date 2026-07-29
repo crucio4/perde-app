@@ -13,6 +13,8 @@
     <string name="label_language">Dil</string>
     <string name="label_sensitivity">Hassasiyet</string>
     <string name="label_show_original">Orijinal metni göster</string>
+    <string name="label_block_secure">Gizli sekmeyi engelle</string>
+    <string name="hint_block_secure">Tarayıcıda ekran okunamıyorsa gizli sekme sayılır ve bloklanır. Yalnızca tarayıcılarda çalışır — bankacılık uygulamaları, şifre yöneticileri ve DRM\'li video etkilenmez.</string>
 
     <string name="profile_muslim">Müslüman</string>
     <string name="profile_christian">Hristiyan</string>
