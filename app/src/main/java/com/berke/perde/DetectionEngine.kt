@@ -136,5 +136,14 @@ class DetectionEngine {
 
     fun currentState() = state
 
+    /**
+     * "kac/kac" — penceredeki kac karenin soft esigi gectigi.
+     * Blok gelmiyorsa sebebini tek bakista gosterir: 8/8 gerekirken 1/1
+     * goruyorsan sorun esikte degil, kare akisinda.
+     */
+    fun windowStatus(): String =
+        "${window.count { it >= Hassasiyet.aktif.soft }}/${window.size}" +
+                " (gereken ${Config.WINDOW_HITS_REQUIRED})"
+
     companion object { private const val TAG = "DetectionEngine" }
 }

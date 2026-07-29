@@ -171,6 +171,18 @@ object SecurePolicy {
 
     /** Kaç ardışık siyah kare sonrası tetiklensin. Geçiş animasyonlarını eler. */
     const val SECURE_BLACK_FRAMES_REQUIRED = 4
+
+    /**
+     * Kaç ardışık tick hiç kare alamayınca "korumalı içerik" sayılsın.
+     *
+     * Gizli sekmede VirtualDisplay siyah kare değil, hiç kare üretmiyor —
+     * siyah kare tespiti bu durumu göremiyor, çünkü inceleyecek kare yok.
+     *
+     * Siyah kare eşiğinden yüksek tutuldu: yakalama yeni başladığında ilk
+     * karenin gelmesi bir iki saniye sürebiliyor ve o pencerede yanlış
+     * tetiklenmek istemiyoruz.
+     */
+    const val SECURE_STARVED_TICKS_REQUIRED = 6
 }
 
 /**

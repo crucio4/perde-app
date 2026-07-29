@@ -47,6 +47,9 @@ class ScreenGuardService : Service() {
     private var analyzedFrames = 0
     private var maxRaw = 0f
     private var secureBlackStreak = 0
+
+    /** Ust uste kac tick hic kare alamadik. FLAG_SECURE sinyali. */
+    private var starvedTicks = 0
     private val differ = FrameDiffer()
     private val blackDetector = BlackFrameDetector()
     private var lastProbs: FloatArray? = null
@@ -176,6 +179,8 @@ class ScreenGuardService : Service() {
                 engine.reset()
                 differ.reset()
                 lastProbs = null
+                starvedTicks = 0
+                secureBlackStreak = 0
             }
             lastWatchedPackage = null
             return
@@ -193,14 +198,31 @@ class ScreenGuardService : Service() {
 
         if (capturer?.isRunning() != true && !(capturer?.start() ?: false)) return
 
-        val frame: Bitmap = capturer?.grabFrame() ?: return
+        // NOT: donen Bitmap ScreenCapturer'a ait, burada recycle EDILMEZ.
+        val frame: Bitmap? = capturer?.grabFrame()
 
-        // --- FLAG_SECURE kör noktası ---
-        // Kare tamamen siyahsa sınıflandırmanın anlamı yok: gizli sekme
-        // ya da korumalı içerik. "Göremiyorum" durumunu sinyal say.
+        // --- FLAG_SECURE kör noktası, 1. biçim: hiç kare gelmiyor ---
+        // Gizli sekmede VirtualDisplay siyah kare değil, HİÇ kare üretmiyor.
+        // BlackFrameDetector bunu göremez, çünkü inceleyeceği bir kare yok.
+        // Yakalama çalışıyor ve önde izlenen bir uygulama varken kare hiç
+        // gelmiyorsa "göremiyorum" durumu budur.
+        if (frame == null) {
+            starvedTicks++
+            if (SecurePolicy.BLOCK_ON_SECURE_BLACK &&
+                starvedTicks >= SecurePolicy.SECURE_STARVED_TICKS_REQUIRED &&
+                !overlay.isShowing()
+            ) {
+                Log.i(TAG, "Hiç kare gelmiyor ($starvedTicks tick) -> korumalı içerik, blok")
+                overlay.show(Motivation.pick(this))
+            }
+            diag.edit().putInt(D_STARVED, starvedTicks).apply()
+            return
+        }
+        starvedTicks = 0
+
+        // --- FLAG_SECURE kör noktası, 2. biçim: kare siyah geliyor ---
         val black = blackDetector.analyze(frame)
         if (black.isSecureBlack) {
-            frame.recycle()
             secureBlackStreak++
             if (SecurePolicy.BLOCK_ON_SECURE_BLACK &&
                 secureBlackStreak >= SecurePolicy.SECURE_BLACK_FRAMES_REQUIRED &&
@@ -225,7 +247,6 @@ class ScreenGuardService : Service() {
         } else {
             classifier.classify(frame)?.also { lastProbs = it }
         }
-        frame.recycle()
         if (probs == null) return
 
         val raw = engine.weighScore(probs)
@@ -239,6 +260,8 @@ class ScreenGuardService : Service() {
             .putFloat(D_LAST_EMA, decision.smoothedScore)
             .putString(D_LAST_PKG, pkg ?: "-")
             .putString(D_SENS, Hassasiyet.aktif.name)
+            .putString(D_WINDOW, engine.windowStatus())
+            .putInt(D_STARVED, 0)
         if (raw > maxRaw) {
             maxRaw = raw
             e.putFloat(D_MAX_RAW, raw)
@@ -311,5 +334,7 @@ class ScreenGuardService : Service() {
         const val D_MAX_RAW = "max_raw"
         const val D_MAX_PROBS = "max_probs"
         const val D_SENS = "sens"
+        const val D_STARVED = "starved"
+        const val D_WINDOW = "window"
     }
 }

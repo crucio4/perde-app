@@ -28,6 +28,20 @@ class ScreenCapturer(
     private var virtualDisplay: VirtualDisplay? = null
     private var running = false
 
+    /**
+     * En son basariyla alinan kare.
+     *
+     * VirtualDisplay yalnizca ekran icerigi DEGISTIGINDE kare uretir, yani
+     * kullanici kaydirmayi birakip icerige bakmaya basladigi anda
+     * acquireLatestImage() null donmeye baslar. Onbellek olmadan tespit tam
+     * o anda duruyordu: pencere oylamasi dolmuyor, blok hic gelmiyordu.
+     *
+     * Yeni kare yoksa ekranda hala ayni icerik duruyor demektir, dolayisiyla
+     * son kareyi yeniden dondurmek hem dogru hem de bedava (FrameDiffer
+     * degismedigini gorup inference'i zaten atliyor).
+     */
+    private var lastFrame: Bitmap? = null
+
     private val width = (metrics.widthPixels / Config.CAPTURE_DOWNSCALE).coerceAtLeast(1)
     private val height = (metrics.heightPixels / Config.CAPTURE_DOWNSCALE).coerceAtLeast(1)
 
@@ -58,14 +72,37 @@ class ScreenCapturer(
         virtualDisplay = null
         imageReader?.close()
         imageReader = null
+        lastFrame?.recycle()
+        lastFrame = null
         running = false
         Log.i(TAG, "Yakalama durdu")
     }
 
     fun isRunning() = running
 
-    /** En son kareyi Bitmap olarak döndürür. Kullanıcı recycle etmeli. */
+    /**
+     * Ekrandaki guncel kare.
+     *
+     * SAHIPLIK: donen Bitmap bu sinifa aittir, cagiran taraf recycle ETMEZ.
+     * Onbelleklenip yeniden dondurulebilecegi icin disaridan geri donusume
+     * sokulmasi kullanim sonrasi serbest birakilmis bellek demek olurdu.
+     * Temizligi stop() yapiyor.
+     *
+     * @return ekranda duran icerik; yakalama baslayali hic kare gelmediyse null
+     */
     fun grabFrame(): Bitmap? {
+        val fresh = acquireFresh()
+        if (fresh != null) {
+            lastFrame?.recycle()
+            lastFrame = fresh
+        }
+        return lastFrame
+    }
+
+    /** Hic kare alinabildi mi? Kare gelmiyorsa icerik FLAG_SECURE olabilir. */
+    fun hasFrame(): Boolean = lastFrame != null
+
+    private fun acquireFresh(): Bitmap? {
         val reader = imageReader ?: return null
         var image: Image? = null
         return try {
