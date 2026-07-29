@@ -39,6 +39,13 @@ class ScreenGuardService : Service() {
 
     /** Sadece tani logu icin. Sentinel deger, ilk tick'te pkg null olsa bile yazsin. */
     private var lastLoggedPackage: String? = "<baslangic>"
+
+    // --- Tani ---
+    // adb olmadan "model ne goruyor" sorusunu cevaplayabilmek icin
+    // olculenler MainActivity'nin durum ekranina yaziliyor.
+    private val diag by lazy { getSharedPreferences(DIAG_PREFS, Context.MODE_PRIVATE) }
+    private var analyzedFrames = 0
+    private var maxRaw = 0f
     private var secureBlackStreak = 0
     private val differ = FrameDiffer()
     private val blackDetector = BlackFrameDetector()
@@ -58,6 +65,10 @@ class ScreenGuardService : Service() {
         classifier = NsfwClassifier(this)
         appWatcher = ForegroundAppWatcher(this)
         overlay = OverlayManager(this)
+
+        // Model yuklenemediyse hicbir sey calismaz ve bu sessiz bir hata —
+        // kullanicinin bunu gorebilmesi gerekiyor.
+        diag.edit().putBoolean(D_MODEL_OK, classifier.isReady()).apply()
 
         workerThread = HandlerThread("perde-worker").also { it.start() }
         worker = Handler(workerThread.looper)
@@ -171,6 +182,10 @@ class ScreenGuardService : Service() {
         if (pkg != lastWatchedPackage && engine.currentState() == DetectionEngine.State.CLEAR) {
             engine.reset()
             lastWatchedPackage = pkg
+            // Tani sayaclari uygulama basina sifirlanir, yoksa en yuksek skor
+            // ilk oturumdan kalir ve sonraki testte ne oldugunu goremezsin.
+            maxRaw = 0f
+            analyzedFrames = 0
         }
 
         if (capturer?.isRunning() != true && !(capturer?.start() ?: false)) return
@@ -212,6 +227,21 @@ class ScreenGuardService : Service() {
 
         val raw = engine.weighScore(probs)
         val decision = engine.update(raw, System.currentTimeMillis())
+
+        // --- Tani kaydi ---
+        analyzedFrames++
+        val e = diag.edit()
+            .putInt(D_FRAMES, analyzedFrames)
+            .putFloat(D_LAST_RAW, raw)
+            .putFloat(D_LAST_EMA, decision.smoothedScore)
+            .putString(D_LAST_PKG, pkg ?: "-")
+            .putString(D_SENS, Hassasiyet.aktif.name)
+        if (raw > maxRaw) {
+            maxRaw = raw
+            e.putFloat(D_MAX_RAW, raw)
+                .putString(D_MAX_PROBS, probs.joinToString(" ") { "%.2f".format(it) })
+        }
+        e.apply()
 
         if (decision.justChanged) {
             when (decision.state) {
@@ -266,5 +296,16 @@ class ScreenGuardService : Service() {
         const val EXTRA_RESULT_CODE = "result_code"
         const val EXTRA_RESULT_DATA = "result_data"
         const val ACTION_STOP = "com.berke.perde.STOP"
+
+        // --- Tani anahtarlari (MainActivity de okuyor) ---
+        const val DIAG_PREFS = "perde_diag"
+        const val D_MODEL_OK = "model_ok"
+        const val D_FRAMES = "frames"
+        const val D_LAST_RAW = "last_raw"
+        const val D_LAST_EMA = "last_ema"
+        const val D_LAST_PKG = "last_pkg"
+        const val D_MAX_RAW = "max_raw"
+        const val D_MAX_PROBS = "max_probs"
+        const val D_SENS = "sens"
     }
 }

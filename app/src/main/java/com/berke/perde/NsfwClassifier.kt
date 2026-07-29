@@ -62,6 +62,9 @@ class NsfwClassifier(context: Context) {
         }
     }
 
+    /** Model gercekten yuklendi mi? Tani ekrani icin. */
+    fun isReady(): Boolean = interpreter != null
+
     /**
      * @return [drawings, hentai, neutral, porn, sexy] olasılıkları,
      *         model yoksa null

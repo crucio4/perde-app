@@ -191,6 +191,8 @@ class MainActivity : AppCompatActivity() {
         val requestedAt = prefs.getLong(KEY_STOP_REQUEST, 0L)
         val h = Hassasiyet.aktif
 
+        val d = getSharedPreferences(ScreenGuardService.DIAG_PREFS, Context.MODE_PRIVATE)
+
         status.text = buildString {
             append("overlay      ").append(if (overlayOk) "OK" else "--").append('\n')
             append("usage stats  ").append(if (usageOk) "OK" else "--").append('\n')
@@ -198,6 +200,29 @@ class MainActivity : AppCompatActivity() {
             append("W_sexy=").append(h.wSexy)
             append("  soft=").append(h.soft)
             append("  hard=").append(h.hard)
+
+            // --- Tani ---
+            // Baska bir uygulamada gezip buraya donunce burasi ne olculdugunu
+            // gosterir. Sayaclar uygulama degisiminde sifirlanir.
+            append("\n\n--- son olcum ---\n")
+            append("model        ")
+                .append(if (d.getBoolean(ScreenGuardService.D_MODEL_OK, false)) "OK" else "YUKLENMEDI")
+                .append('\n')
+            append("aktif profil ").append(d.getString(ScreenGuardService.D_SENS, "-")).append('\n')
+            append("son paket    ").append(d.getString(ScreenGuardService.D_LAST_PKG, "-")).append('\n')
+            append("analiz kare  ").append(d.getInt(ScreenGuardService.D_FRAMES, 0)).append('\n')
+            append("son skor     ")
+                .append("%.3f".format(d.getFloat(ScreenGuardService.D_LAST_RAW, 0f)))
+                .append("   ema ")
+                .append("%.3f".format(d.getFloat(ScreenGuardService.D_LAST_EMA, 0f)))
+                .append('\n')
+            append("EN YUKSEK    ")
+                .append("%.3f".format(d.getFloat(ScreenGuardService.D_MAX_RAW, 0f)))
+                .append('\n')
+            append("siniflar     ")
+                .append(d.getString(ScreenGuardService.D_MAX_PROBS, "-")).append('\n')
+            append("             draw hent neut porn sexy")
+
             if (requestedAt != 0L) {
                 val rem = (Config.DISABLE_DELAY_MS - (System.currentTimeMillis() - requestedAt))
                     .coerceAtLeast(0) / 1000
