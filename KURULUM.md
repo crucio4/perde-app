@@ -32,7 +32,7 @@ Asıl işi yapan şey teknik kilit değil, dürtüyle eylem arasına giren sürt
 
 1. [colab.research.google.com](https://colab.research.google.com) → yeni notebook
 2. `tools/model_donustur.py` içindeki 5 hücreyi sırayla yapıştır ve çalıştır
-3. `nsfw.tflite` indir (quantization sonrası ~5-7 MB)
+3. `nsfw.tflite` indir (quantization sonrası ~4-7 MB; ölçülen: 4.48 MB)
 
 Betik `1.2.0` sürümündeki **`mobilenet_v2_140_224.1.zip`** dosyasını çekiyor (100.6 MB, SavedModel). Bu sürümün tek varlığı bu — `.tar.gz` diye bir dosya yok, `.h5` de yok. Klasör adı arşivden arşive değiştiği için betik `saved_model.pb`'yi kendi buluyor, elle yol düzeltmen gerekmiyor.
 
