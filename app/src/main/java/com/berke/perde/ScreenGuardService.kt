@@ -152,5 +152,6 @@ class ScreenGuardService : Service() {
         const val D_STARVED = "starved"
         const val D_WINDOW = "window"
         const val D_SOURCE = "source"
+        const val D_SECURE_RULE = "secure_rule"
     }
 }

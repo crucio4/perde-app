@@ -244,6 +244,22 @@ object SecurePolicy {
      * Diğer ikisi sezgisel olduğundan daha yüksek tutuldu.
      */
     const val SECURE_ERROR_FRAMES_REQUIRED = 2
+
+    /**
+     * Bir uygulamanın "gizli moda geçiş" kuralına dahil olması için kaç kare
+     * okunabilmiş olması gerekiyor.
+     *
+     * Kural şu: ÖNCE okunabilen, SONRA ekranı gizleyen bir uygulama bilinçli
+     * olarak gizli moda geçmiştir (Reddit anonim mod, Telegram gizli sohbet).
+     * Hiç okunamamış bir uygulama ise baştan sona korumalıdır — bankacılık,
+     * şifre yöneticisi — ve asla bloklanmamalı.
+     *
+     * Bu eşik açılış ekranı filtresi: bazı bankaların splash ekranı bir iki
+     * kare okunabiliyor, ardından uygulama korumaya geçiyor. Eşik olmasaydı
+     * o bankalar "geçiş yaptı" sayılıp yanlış bloklanırdı. 1 fps'te 8 kare
+     * ≈ 8 saniye gerçek kullanım demek; hiçbir splash ekranı o kadar sürmez.
+     */
+    const val SECURE_WARMUP_FRAMES = 8
 }
 
 /**

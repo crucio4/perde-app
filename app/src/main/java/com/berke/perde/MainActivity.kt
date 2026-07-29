@@ -252,6 +252,8 @@ class MainActivity : AppCompatActivity() {
             append("koruma       ").append(if (Guard.isEnabled(this@MainActivity)) "ACIK" else "kapali")
             append('\n')
             append("kaynak       ").append(d.getString(ScreenGuardService.D_SOURCE, "-")).append('\n')
+            append("gizli kural  ")
+                .append(d.getString(ScreenGuardService.D_SECURE_RULE, "-")).append('\n')
             append("aktif profil ").append(d.getString(ScreenGuardService.D_SENS, "-")).append('\n')
             append("son paket    ").append(d.getString(ScreenGuardService.D_LAST_PKG, "-")).append('\n')
             append("analiz kare  ").append(d.getInt(ScreenGuardService.D_FRAMES, 0)).append('\n')

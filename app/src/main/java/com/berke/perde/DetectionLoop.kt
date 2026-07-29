@@ -51,6 +51,24 @@ class DetectionLoop(
     private var analyzedFrames = 0
     private var maxRaw = 0f
 
+    /** Bu uygulamada bu oturumda kaç kare okunabildi. Paket değişince sıfırlanır. */
+    private var readableFrames = 0
+
+    /**
+     * Bir kez "yeterince okunabilir" olmuş paketler.
+     *
+     * Bu kümedeki bir paket sonradan ekranı gizlemeye başlarsa, bu bilinçli
+     * bir gizli moda geçiştir → bloklanır (Reddit anonim mod, Telegram gizli
+     * sohbet). Kümeye hiç girmemiş paketler baştan sona korumalıdır
+     * (bankacılık, şifre yöneticisi) → asla bloklanmaz.
+     *
+     * Bilerek bellekte, kalıcıya yazılmıyor: yanlışlıkla kümeye girmiş bir
+     * uygulama sonsuza kadar orada kalmasın. Yeniden kurulan döngüde
+     * uygulamanın birkaç saniye normal kullanılması kuralı zaten yeniden
+     * hazırlıyor.
+     */
+    private val gecisAdaylari = mutableSetOf<String>()
+
     private val runnable = object : Runnable {
         override fun run() {
             try { tick() } catch (e: Exception) { Log.e(TAG, "tick hatası", e) }
@@ -114,17 +132,37 @@ class DetectionLoop(
             lastWatchedPackage = pkg
             maxRaw = 0f
             analyzedFrames = 0
+            // Isınma sayacı uygulama başına: yeni uygulamada sıfırdan başla,
+            // yoksa bir uygulamada biriken okunabilirlik diğerine taşınır.
+            readableFrames = 0
         }
 
         if (!source.isRunning() && !source.start()) return
 
-        // "Göremiyorum" durumunu blok sebebi saymak YALNIZCA tarayıcılarda
-        // geçerli. Bankacılık uygulamaları, şifre yöneticileri, DRM'li video
-        // ve 2FA ekranları da FLAG_SECURE kullanıyor; bu kapı olmadan hepsi
-        // bloklanır ve telefon kullanılamaz hale gelirdi. Gizli sekme ise
-        // bir tarayıcı olgusu, yani kör nokta bu daralmayla kapanmaya devam
-        // ediyor.
-        val korumaliBlokla = SecurePolicy.blockOnSecure && Config.isBrowser(pkg)
+        // "Göremiyorum" durumu iki halde blok sebebi sayılır:
+        //
+        //   1. Uygulama bir tarayıcı  -> gizli sekme
+        //   2. Uygulama daha önce okunabiliyordu, sonra gizlemeye başladı
+        //      -> bilinçli gizli mod geçişi (Reddit anonim, Telegram gizli)
+        //
+        // Bunun dışında kalan her şey — bankacılık, şifre yöneticisi, MDM,
+        // 2FA — baştan sona korumalıdır, hiç okunamamıştır, dolayısıyla
+        // kümeye hiç girmez ve asla bloklanmaz. Ayrım için isim listesi
+        // tutmaya gerek yok: uygulamanın kendi davranışı ayırıyor.
+        val gecisYapti = pkg != null && pkg in gecisAdaylari
+        val korumaliBlokla = SecurePolicy.blockOnSecure &&
+                (Config.isBrowser(pkg) || gecisYapti)
+
+        // Tanı etiketi: "bankam neden bloklanmadı / gizli sekme neden
+        // bloklandı" sorusunun cevabı. Üç dalda da yazılıyor, yoksa hiç
+        // okunamayan bir uygulamada ekranda önceki uygulamadan kalan
+        // değer görünür ve yanıltır.
+        val kuralEtiketi = when {
+            !SecurePolicy.blockOnSecure -> "kapali"
+            Config.isBrowser(pkg) -> "tarayici"
+            gecisYapti -> "gecis izleniyor"
+            else -> "muaf ($readableFrames/${SecurePolicy.SECURE_WARMUP_FRAMES})"
+        }
 
         // --- FLAG_SECURE, 1. biçim: kaynak açıkça "göremiyorum" diyor ---
         // takeScreenshot ERROR_TAKE_SCREENSHOT_SECURE_WINDOW döndürüyor.
@@ -138,7 +176,11 @@ class DetectionLoop(
                 Log.i(TAG, "Korumalı içerik (kesin sinyal, $secureErrorStreak) -> blok")
                 overlay.show(Motivation.pick(ctx))
             }
-            diag.edit().putInt(ScreenGuardService.D_STARVED, secureErrorStreak).apply()
+            diag.edit()
+                .putInt(ScreenGuardService.D_STARVED, secureErrorStreak)
+                .putString(ScreenGuardService.D_SECURE_RULE, kuralEtiketi)
+                .putString(ScreenGuardService.D_LAST_PKG, pkg ?: "-")
+                .apply()
             return
         }
         secureErrorStreak = 0
@@ -157,7 +199,11 @@ class DetectionLoop(
                 Log.i(TAG, "Hiç kare gelmiyor ($starvedTicks tick) -> korumalı içerik, blok")
                 overlay.show(Motivation.pick(ctx))
             }
-            diag.edit().putInt(ScreenGuardService.D_STARVED, starvedTicks).apply()
+            diag.edit()
+                .putInt(ScreenGuardService.D_STARVED, starvedTicks)
+                .putString(ScreenGuardService.D_SECURE_RULE, kuralEtiketi)
+                .putString(ScreenGuardService.D_LAST_PKG, pkg ?: "-")
+                .apply()
             return
         }
         starvedTicks = 0
@@ -176,6 +222,17 @@ class DetectionLoop(
             return
         }
         secureBlackStreak = 0
+
+        // Buraya ulaştıysak kare gerçekten okunabildi (null değil, siyah değil).
+        // Isınma eşiğini geçen uygulama "geçiş adayı" oluyor: bundan sonra
+        // ekranını gizlemeye başlarsa bu bilinçli bir gizli mod geçişidir.
+        readableFrames++
+        if (pkg != null && readableFrames >= SecurePolicy.SECURE_WARMUP_FRAMES) {
+            if (gecisAdaylari.add(pkg)) {
+                Log.d(TAG, "$pkg okunabilir olarak işaretlendi ($readableFrames kare)")
+            }
+        }
+
         if (overlay.isShowing() && engine.currentState() == DetectionEngine.State.CLEAR) {
             overlay.hide()
         }
@@ -203,6 +260,7 @@ class DetectionLoop(
             .putString(ScreenGuardService.D_WINDOW, engine.windowStatus())
             .putString(ScreenGuardService.D_SOURCE, source.javaClass.simpleName)
             .putInt(ScreenGuardService.D_STARVED, 0)
+            .putString(ScreenGuardService.D_SECURE_RULE, kuralEtiketi)
         if (raw > maxRaw) {
             maxRaw = raw
             e.putFloat(ScreenGuardService.D_MAX_RAW, raw)

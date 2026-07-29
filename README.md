@@ -128,11 +128,26 @@ Gizli sekme ve `FLAG_SECURE` kullanan uygulamalarda MediaProjection **tamamen si
 | Hiç kare gelmez | VirtualDisplay üretmeyi bırakır | MediaProjection yolu, 6 tick |
 | Siyah kare | Kare gelir ama tüm pikseller 0 | `BlackFrameDetector`, 4 kare |
 
-**Bu kural yalnızca `Config.BROWSER_PACKAGES` içindeki uygulamalarda işler.** Sebep önemli: FLAG_SECURE'u meşru kullanan çok uygulama var — bankacılık, şifre yöneticileri, DRM'li video, 2FA ekranları. Ayrım olmadan "göremiyorum = blokla" kuralı bunların hepsini kullanılamaz hale getirir; bankacılık uygulamanı açar, iki saniye sonra ana ekrana atılırsın. Gizli sekme ise bir tarayıcı olgusu olduğu için kör nokta bu daralmayla kapanmaya devam ediyor.
+### "Göremiyorum" ne zaman blok sebebidir
 
-Bedeli: listede olmayan bir tarayıcının gizli sekmesi kaçar. Bilinçli takas — yanlış tarafta hata yapmak bankacılık uygulamanı bozmaktan iyidir.
+Burası kritik: FLAG_SECURE'u meşru kullanan çok uygulama var — bankacılık, şifre yöneticileri, DRM'li video, 2FA, MDM. Ayrım yapmadan "göremiyorum = blokla" demek bunların hepsini kullanılamaz hale getirir; bankanı açarsın, iki saniye sonra ana ekrana atılırsın.
+
+Ayrım için **isim listesi tutulmuyor** — uygulamanın kendi davranışı ayırıyor. İki koşuldan biri sağlanmalı:
+
+| Koşul | Gerekçe | Örnek |
+|---|---|---|
+| Uygulama bir tarayıcı (`BROWSER_PACKAGES`) | Gizli sekme bir tarayıcı olgusu | Chrome gizli sekme |
+| Uygulama **önce okunabiliyordu, sonra gizlemeye başladı** | Bilinçli gizli mod geçişi | Reddit anonim mod, Telegram gizli sohbet |
+
+Hiç okunamamış bir uygulama baştan sona korumalıdır — bankacılık, şifre yöneticisi — ve **asla bloklanmaz**. Banka isimlerini bilmeye gerek yok.
+
+`SECURE_WARMUP_FRAMES = 8` açılış ekranı filtresi: bazı bankaların splash ekranı bir iki kare okunabiliyor, sonra korumaya geçiyor. Eşik olmasaydı "geçiş yaptı" sayılıp yanlış bloklanırlardı. 1 fps'te 8 kare ≈ 8 saniye gerçek kullanım; hiçbir splash o kadar sürmez.
+
+**Bilinen yanlış tetiklenme:** DRM'li video. Netflix'in katalog ekranı okunabilir, oynatmaya basınca korumaya geçer — kural bunu gizli mod geçişi sanar. Şimdilik çözümü ayarı kapatmak; kalıcı çözüm uygulama bazlı muafiyet listesi.
 
 Uygulama içinden **"Gizli sekmeyi engelle"** ile tamamen kapatılabilir. Gizli sekmeyi normal işleri için kullanıyorsan kapat.
+
+Tanı ekranındaki `gizli kural` satırı o an hangi koşulun geçerli olduğunu gösterir: `tarayici`, `gecis izleniyor`, `muaf (3/8)` ya da `kapali`.
 
 **Erişilebilirlik katmanı** (`PerdeAccessibilityService.kt`): FLAG_SECURE render edilmiş yüzeyi korur, accessibility node tree'yi korumaz. Gizli sekmede ekran siyah gelirken adres çubuğu metni hâlâ okunabilir. Kurulum: Ayarlar > Erişilebilirlik > Perde.
 
