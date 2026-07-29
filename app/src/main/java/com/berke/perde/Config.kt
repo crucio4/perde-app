@@ -73,6 +73,21 @@ object Config {
     /** Blok ekranının minimum kalma süresi (ms). Anında kaybolmasın. */
     const val MIN_BLOCK_DURATION_MS = 3_000L
 
+    /**
+     * Blok ekranının ZORUNLU kalkma süresi (ms).
+     *
+     * Bu bir güvenlik sübabı, ayar değil. Blok ekranı açıkken ekran
+     * görüntüsü artık içeriği değil kendi opak katmanımızı yakalıyor —
+     * yani o sırada "içerik temizlendi mi" sorusunu güvenilir biçimde
+     * cevaplayamıyoruz. Tespit mantığının herhangi bir dalı takılırsa
+     * kullanıcı telefonunda kilitli kalır; geri tuşu, ana ekran tuşu ve
+     * bildirim paneli overlay'in altında kaldığı için çıkış yolu da yok.
+     *
+     * Bu süre dolduğunda blok koşulsuz kalkar. İçerik hâlâ oradaysa
+     * soğuma bitince yeniden tetiklenir — sürtünme korunur, kilit oluşmaz.
+     */
+    const val MAX_BLOCK_DURATION_MS = 8_000L
+
     // ---------- Kendine karşı koruma ----------
     /**
      * Uygulamayı durdurmak istediğinde beklemen gereken süre (ms).

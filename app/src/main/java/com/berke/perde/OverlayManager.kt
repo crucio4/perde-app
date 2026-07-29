@@ -25,6 +25,17 @@ class OverlayManager(private val context: Context) {
     private val main = Handler(Looper.getMainLooper())
     private var view: View? = null
 
+    /**
+     * Görünür durumun senkron kopyası.
+     *
+     * `view` ana iş parçacığında yazılıyor ama isShowing() tespit
+     * döngüsünün worker'ından okunuyor. Aradaki gecikme yüzünden show()
+     * çağrıldıktan hemen sonra isShowing() hâlâ false dönüyordu; blok
+     * kaldırma mantığı buna göre karar verince durum tutarsızlaşıyordu.
+     * Bu bayrak çağrı anında set ediliyor, yarış kalmıyor.
+     */
+    @Volatile private var shown = false
+
     private val layoutType =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -33,6 +44,8 @@ class OverlayManager(private val context: Context) {
             WindowManager.LayoutParams.TYPE_SYSTEM_ALERT
 
     fun show(message: String = "Kapat.") {
+        if (shown) return
+        shown = true
         main.post {
             if (view != null) return@post
             val v = LayoutInflater.from(context).inflate(R.layout.overlay_block, null)
@@ -51,13 +64,18 @@ class OverlayManager(private val context: Context) {
             try {
                 wm.addView(v, params)
                 view = v
-            } catch (_: Exception) { /* izin yok */ }
+            } catch (_: Exception) {
+                // Overlay izni yoksa ekran hiç açılmıyor; bayrağı geri al,
+                // yoksa döngü var olmayan bir bloğu açık sanar.
+                shown = false
+            }
 
             goHome()
         }
     }
 
     fun hide() {
+        shown = false
         main.post {
             view?.let {
                 try { wm.removeView(it) } catch (_: Exception) {}
@@ -66,7 +84,7 @@ class OverlayManager(private val context: Context) {
         }
     }
 
-    fun isShowing() = view != null
+    fun isShowing() = shown
 
     private fun goHome() {
         val intent = Intent(Intent.ACTION_MAIN).apply {

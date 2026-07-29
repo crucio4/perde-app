@@ -69,6 +69,12 @@ class DetectionLoop(
      */
     private val gecisAdaylari = mutableSetOf<String>()
 
+    /** Blok ekranı ne zaman açıldı. Zorunlu kalkma süresini ölçmek için. */
+    private var overlayShownAt = 0L
+
+    /** Blok kalktıktan sonra bu ana kadar yeniden bloklanmaz. */
+    private var blockCooldownUntil = 0L
+
     private val runnable = object : Runnable {
         override fun run() {
             try { tick() } catch (e: Exception) { Log.e(TAG, "tick hatası", e) }
@@ -101,7 +107,48 @@ class DetectionLoop(
         Log.i(TAG, "Döngü durdu")
     }
 
+    /**
+     * Blok ekranını açar. Tek giriş noktası: soğuma kontrolü ve açılış
+     * zamanının kaydı burada, yoksa çağrı yerlerinden biri unutulur.
+     */
+    private fun blokla(sebep: String) {
+        val now = System.currentTimeMillis()
+        if (now < blockCooldownUntil) return
+        if (overlay.isShowing()) return
+        overlayShownAt = now
+        Log.i(TAG, "BLOK: $sebep")
+        overlay.show(Motivation.pick(ctx))
+    }
+
+    private fun blogonKaldir(sebep: String) {
+        overlay.hide()
+        blockCooldownUntil = System.currentTimeMillis() + Config.COOLDOWN_MS
+        engine.reset()
+        differ.reset()
+        lastProbs = null
+        secureBlackStreak = 0
+        secureErrorStreak = 0
+        starvedTicks = 0
+        Log.i(TAG, "Blok kaldırıldı: $sebep")
+    }
+
     private fun tick() {
+        // --- Blok ekranı açıkken ---
+        // KRİTİK: overlay açıkken yakalanan kare artık ekrandaki içerik
+        // değil, KENDİ opak katmanımız. Onu analiz etmek anlamsız — dahası
+        // siyah kare tespiti onu "korumalı içerik" sanıp erken dönüyordu ve
+        // blok kaldırma kodu o dönüşün altında kaldığı için hiç çalışmıyordu.
+        // Sonuç: kullanıcı telefonunda kilitli kalıyordu; geri, ana ekran ve
+        // bildirim paneli overlay'in altında olduğu için çıkış yolu da yoktu.
+        //
+        // Bu yüzden overlay açıkken tek yapılan işi süreyle bitirmek.
+        if (overlay.isShowing()) {
+            if (System.currentTimeMillis() - overlayShownAt >= Config.MAX_BLOCK_DURATION_MS) {
+                blogonKaldir("süre doldu")
+            }
+            return
+        }
+
         val pkg = appWatcher.currentForegroundPackage()
 
         if (pkg != lastLoggedPackage) {
@@ -173,8 +220,7 @@ class DetectionLoop(
                 secureErrorStreak >= SecurePolicy.SECURE_ERROR_FRAMES_REQUIRED &&
                 !overlay.isShowing()
             ) {
-                Log.i(TAG, "Korumalı içerik (kesin sinyal, $secureErrorStreak) -> blok")
-                overlay.show(Motivation.pick(ctx))
+                blokla("korumalı içerik, kesin sinyal ($secureErrorStreak)")
             }
             diag.edit()
                 .putInt(ScreenGuardService.D_STARVED, secureErrorStreak)
@@ -196,8 +242,7 @@ class DetectionLoop(
                 starvedTicks >= SecurePolicy.SECURE_STARVED_TICKS_REQUIRED &&
                 !overlay.isShowing()
             ) {
-                Log.i(TAG, "Hiç kare gelmiyor ($starvedTicks tick) -> korumalı içerik, blok")
-                overlay.show(Motivation.pick(ctx))
+                blokla("hiç kare gelmiyor ($starvedTicks tick)")
             }
             diag.edit()
                 .putInt(ScreenGuardService.D_STARVED, starvedTicks)
@@ -216,8 +261,7 @@ class DetectionLoop(
                 secureBlackStreak >= SecurePolicy.SECURE_BLACK_FRAMES_REQUIRED &&
                 !overlay.isShowing()
             ) {
-                Log.i(TAG, "FLAG_SECURE tespit edildi ($secureBlackStreak kare) -> blok")
-                overlay.show(Motivation.pick(ctx))
+                blokla("FLAG_SECURE siyah kare ($secureBlackStreak)")
             }
             return
         }
@@ -273,7 +317,7 @@ class DetectionLoop(
 
         if (decision.justChanged) {
             when (decision.state) {
-                DetectionEngine.State.BLOCKED -> overlay.show(Motivation.pick(ctx))
+                DetectionEngine.State.BLOCKED -> blokla("skor %.3f".format(raw))
                 DetectionEngine.State.CLEAR -> overlay.hide()
             }
         }
