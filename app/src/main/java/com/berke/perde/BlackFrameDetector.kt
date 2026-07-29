@@ -23,15 +23,6 @@ import android.graphics.Bitmap
  */
 class BlackFrameDetector {
 
-    /** Kaç piksel örneklenecek (tüm kareyi taramak gereksiz pahalı). */
-    private const val SAMPLE_STEP = 8
-
-    /** Bu ortalamanın altı "siyah" sayılır (0-255). */
-    private const val MEAN_THRESHOLD = 3.0
-
-    /** Bu varyansın altı "yapay siyah" sayılır. Gerçek koyu ekranda varyans yüksektir. */
-    private const val VARIANCE_THRESHOLD = 2.0
-
     data class Result(val isSecureBlack: Boolean, val mean: Double, val variance: Double)
 
     // Yeniden kullanılan tampon — her karede yeni dizi ayırmamak için
@@ -73,5 +64,16 @@ class BlackFrameDetector {
             mean = mean,
             variance = variance
         )
+    }
+
+    companion object {
+        /** Kaç piksel örneklenecek (tüm kareyi taramak gereksiz pahalı). */
+        private const val SAMPLE_STEP = 8
+
+        /** Bu ortalamanın altı "siyah" sayılır (0-255). */
+        private const val MEAN_THRESHOLD = 3.0
+
+        /** Bu varyansın altı "yapay siyah" sayılır. Gerçek koyu ekranda varyans yüksektir. */
+        private const val VARIANCE_THRESHOLD = 2.0
     }
 }
