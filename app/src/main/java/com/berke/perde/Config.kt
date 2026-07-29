@@ -183,6 +183,15 @@ object SecurePolicy {
      * tetiklenmek istemiyoruz.
      */
     const val SECURE_STARVED_TICKS_REQUIRED = 6
+
+    /**
+     * Kaç ardışık "korumalı içerik" hatasından sonra tetiklensin.
+     *
+     * takeScreenshot bu durumu ERROR_TAKE_SCREENSHOT_SECURE_WINDOW ile
+     * açıkça bildiriyor — tahmin değil kesin bilgi olduğu için eşik düşük.
+     * Diğer ikisi sezgisel olduğundan daha yüksek tutuldu.
+     */
+    const val SECURE_ERROR_FRAMES_REQUIRED = 2
 }
 
 /**
@@ -238,8 +247,31 @@ enum class Hassasiyet(
     KATI(1.00f, 0.50f, 0.88f, 0.28f);
 
     companion object {
-        /** Aktif profil. Kullanıcı seçimi Prefs'ten okunacaksa burayı bağla. */
+        /** Aktif profil. */
         @Volatile var aktif: Hassasiyet = DENGELI
+
+        private const val PREFS = "perde"
+        private const val KEY = "sensitivity"
+
+        /**
+         * Kalıcıya yazılmış profili yükler.
+         *
+         * Statik alan süreç ölümünü atlatamıyor ve tespit döngüsü artık
+         * MainActivity hiç açılmadan da başlayabiliyor (erişilebilirlik
+         * servisi yeniden bağlandığında). Okumazsak sessizce DENGELI'ye
+         * düşer ve kullanıcı seçtiği profilin uygulandığını sanır.
+         */
+        fun load(ctx: android.content.Context) {
+            val saved = ctx.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
+                .getString(KEY, DENGELI.name) ?: DENGELI.name
+            aktif = runCatching { valueOf(saved) }.getOrDefault(DENGELI)
+        }
+
+        fun save(ctx: android.content.Context, h: Hassasiyet) {
+            aktif = h
+            ctx.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
+                .edit().putString(KEY, h.name).apply()
+        }
     }
 }
 

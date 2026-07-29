@@ -1,0 +1,223 @@
+package com.berke.perde
+
+import android.content.Context
+import android.graphics.Bitmap
+import android.os.Handler
+import android.os.HandlerThread
+import android.util.Log
+
+/**
+ * Tespit dongusu. Eskiden ScreenGuardService'in icindeydi; iki ayri
+ * kare kaynagi (MediaProjection ve erisilebilirlik) ayni mantigi
+ * kullanabilsin diye buraya alindi.
+ *
+ *   ondeki uygulama izleniyor mu?
+ *     hayir -> yakalamayi durdur, uyu (batarya)
+ *     evet  -> kare al -> siniflandir -> DetectionEngine -> blokla/kaldir
+ *
+ * @param sourceFactory kaynak, dongunun kendi worker Handler'ini
+ *        kullanabilsin diye fabrika olarak aliniyor
+ */
+class DetectionLoop(
+    private val ctx: Context,
+    sourceFactory: (Handler) -> FrameSource
+) {
+
+    private val thread = HandlerThread("perde-worker").also { it.start() }
+    private val worker = Handler(thread.looper)
+
+    private val source: FrameSource = sourceFactory(worker)
+
+    private val classifier = NsfwClassifier(ctx)
+    private val appWatcher = ForegroundAppWatcher(ctx)
+    private val overlay = OverlayManager(ctx)
+    private val engine = DetectionEngine()
+    private val differ = FrameDiffer()
+    private val blackDetector = BlackFrameDetector()
+
+    private val diag = ctx.getSharedPreferences(
+        ScreenGuardService.DIAG_PREFS, Context.MODE_PRIVATE
+    )
+
+    private var lastWatchedPackage: String? = null
+    private var lastLoggedPackage: String? = "<baslangic>"
+    private var lastProbs: FloatArray? = null
+    private var secureBlackStreak = 0
+    private var secureErrorStreak = 0
+    private var starvedTicks = 0
+    private var calmFrames = 0
+    private var currentInterval = Adaptive.FAST_INTERVAL_MS
+
+    private var analyzedFrames = 0
+    private var maxRaw = 0f
+
+    private val runnable = object : Runnable {
+        override fun run() {
+            try { tick() } catch (e: Exception) { Log.e(TAG, "tick hatası", e) }
+            worker.postDelayed(this, currentInterval)
+        }
+    }
+
+    fun start() {
+        // Servis MainActivity acilmadan da baslayabiliyor (erisilebilirlik
+        // servisi yeniden baglaninca). Hassasiyet statik bir alanda tutuldugu
+        // icin o durumda varsayilana donuyordu — prefs'ten okumak sart.
+        Hassasiyet.load(ctx)
+
+        diag.edit()
+            .putBoolean(ScreenGuardService.D_MODEL_OK, classifier.isReady())
+            .putString(ScreenGuardService.D_MODEL_ERR, classifier.lastError ?: "-")
+            .apply()
+
+        worker.post(runnable)
+        Log.i(TAG, "Döngü başladı, kaynak=${source.javaClass.simpleName}")
+    }
+
+    fun stop() {
+        worker.removeCallbacksAndMessages(null)
+        overlay.hide()
+        source.stop()
+        classifier.close()
+        thread.quitSafely()
+        Log.i(TAG, "Döngü durdu")
+    }
+
+    private fun tick() {
+        val pkg = appWatcher.currentForegroundPackage()
+
+        if (pkg != lastLoggedPackage) {
+            lastLoggedPackage = pkg
+            Log.d(TAG, "ön planda: $pkg  izlenecek=${appWatcher.shouldMonitor(pkg)}")
+        }
+
+        // Kendi overlay'imiz açıkken öndeki paket değişmiş görünebilir; blok
+        // durumundayken paket kontrolünü atla.
+        if (engine.currentState() == DetectionEngine.State.CLEAR &&
+            !appWatcher.shouldMonitor(pkg)
+        ) {
+            if (source.isRunning()) {
+                source.stop()
+                engine.reset()
+                differ.reset()
+                lastProbs = null
+                starvedTicks = 0
+                secureBlackStreak = 0
+                secureErrorStreak = 0
+            }
+            lastWatchedPackage = null
+            return
+        }
+
+        if (pkg != lastWatchedPackage && engine.currentState() == DetectionEngine.State.CLEAR) {
+            engine.reset()
+            lastWatchedPackage = pkg
+            maxRaw = 0f
+            analyzedFrames = 0
+        }
+
+        if (!source.isRunning() && !source.start()) return
+
+        // --- FLAG_SECURE, 1. biçim: kaynak açıkça "göremiyorum" diyor ---
+        // takeScreenshot ERROR_TAKE_SCREENSHOT_SECURE_WINDOW döndürüyor.
+        // Bu tahmin değil kesin bilgi, o yüzden eşik düşük tutuldu.
+        if (source.isSecureBlocked()) {
+            secureErrorStreak++
+            if (SecurePolicy.BLOCK_ON_SECURE_BLACK &&
+                secureErrorStreak >= SecurePolicy.SECURE_ERROR_FRAMES_REQUIRED &&
+                !overlay.isShowing()
+            ) {
+                Log.i(TAG, "Korumalı içerik (kesin sinyal, $secureErrorStreak) -> blok")
+                overlay.show(Motivation.pick(ctx))
+            }
+            diag.edit().putInt(ScreenGuardService.D_STARVED, secureErrorStreak).apply()
+            return
+        }
+        secureErrorStreak = 0
+
+        // NOT: dönen Bitmap kaynağa ait, burada recycle EDİLMEZ.
+        val frame: Bitmap? = source.grabFrame()
+
+        // --- FLAG_SECURE, 2. biçim: hiç kare gelmiyor ---
+        // MediaProjection gizli sekmede siyah kare değil, HİÇ kare üretmiyor.
+        if (frame == null) {
+            starvedTicks++
+            if (SecurePolicy.BLOCK_ON_SECURE_BLACK &&
+                starvedTicks >= SecurePolicy.SECURE_STARVED_TICKS_REQUIRED &&
+                !overlay.isShowing()
+            ) {
+                Log.i(TAG, "Hiç kare gelmiyor ($starvedTicks tick) -> korumalı içerik, blok")
+                overlay.show(Motivation.pick(ctx))
+            }
+            diag.edit().putInt(ScreenGuardService.D_STARVED, starvedTicks).apply()
+            return
+        }
+        starvedTicks = 0
+
+        // --- FLAG_SECURE, 3. biçim: kare siyah geliyor ---
+        val black = blackDetector.analyze(frame)
+        if (black.isSecureBlack) {
+            secureBlackStreak++
+            if (SecurePolicy.BLOCK_ON_SECURE_BLACK &&
+                secureBlackStreak >= SecurePolicy.SECURE_BLACK_FRAMES_REQUIRED &&
+                !overlay.isShowing()
+            ) {
+                Log.i(TAG, "FLAG_SECURE tespit edildi ($secureBlackStreak kare) -> blok")
+                overlay.show(Motivation.pick(ctx))
+            }
+            return
+        }
+        secureBlackStreak = 0
+        if (overlay.isShowing() && engine.currentState() == DetectionEngine.State.CLEAR) {
+            overlay.hide()
+        }
+
+        // --- Kare farkı: ekran değişmediyse inference'i atla ---
+        val diff = differ.check(frame)
+        val probs: FloatArray? = if (!diff.changed && lastProbs != null) {
+            lastProbs
+        } else {
+            classifier.classify(frame)?.also { lastProbs = it }
+        }
+        if (probs == null) return
+
+        val raw = engine.weighScore(probs)
+        val decision = engine.update(raw, System.currentTimeMillis())
+
+        // --- Tanı kaydı ---
+        analyzedFrames++
+        val e = diag.edit()
+            .putInt(ScreenGuardService.D_FRAMES, analyzedFrames)
+            .putFloat(ScreenGuardService.D_LAST_RAW, raw)
+            .putFloat(ScreenGuardService.D_LAST_EMA, decision.smoothedScore)
+            .putString(ScreenGuardService.D_LAST_PKG, pkg ?: "-")
+            .putString(ScreenGuardService.D_SENS, Hassasiyet.aktif.name)
+            .putString(ScreenGuardService.D_WINDOW, engine.windowStatus())
+            .putString(ScreenGuardService.D_SOURCE, source.javaClass.simpleName)
+            .putInt(ScreenGuardService.D_STARVED, 0)
+        if (raw > maxRaw) {
+            maxRaw = raw
+            e.putFloat(ScreenGuardService.D_MAX_RAW, raw)
+                .putString(
+                    ScreenGuardService.D_MAX_PROBS,
+                    probs.joinToString(" ") { "%.2f".format(it) }
+                )
+        }
+        e.apply()
+
+        if (decision.justChanged) {
+            when (decision.state) {
+                DetectionEngine.State.BLOCKED -> overlay.show(Motivation.pick(ctx))
+                DetectionEngine.State.CLEAR -> overlay.hide()
+            }
+        }
+
+        // --- Uyarlanabilir örnekleme ---
+        if (Adaptive.ENABLED) {
+            if (decision.smoothedScore < Adaptive.CALM_SCORE) calmFrames++ else calmFrames = 0
+            currentInterval = if (calmFrames >= Adaptive.CALM_AFTER_FRAMES)
+                Adaptive.SLOW_INTERVAL_MS else Adaptive.FAST_INTERVAL_MS
+        }
+    }
+
+    companion object { private const val TAG = "DetectionLoop" }
+}

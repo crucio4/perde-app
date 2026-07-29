@@ -32,6 +32,7 @@ class MainActivity : AppCompatActivity() {
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(svc)
             else startService(svc)
+            Guard.setEnabled(this, true)
             toast(getString(R.string.toast_active))
             refresh()
         } else toast(getString(R.string.toast_denied))
@@ -104,6 +105,18 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * Spinner.setSelection() dinleyiciyi de tetikliyor. Dinleyici prefs'e
+     * yazdigi icin, ekran her acildiginda kullanicinin secimi programatik
+     * secimle EZILIYORDU. Bu bayrak ilk (programatik) geri cagriyi yutuyor;
+     * sp.post{} pending layout'tan sonra calistigi icin dogru ani yakaliyor.
+     */
+    private fun <T : AdapterView<*>> T.ignoreFirstSelection(): BooleanArray {
+        val flag = booleanArrayOf(true)
+        post { flag[0] = false }
+        return flag
+    }
+
     private fun setupProfile() {
         val sp = findViewById<Spinner>(R.id.spinnerProfile)
         val etiketler = listOf(
@@ -119,9 +132,16 @@ class MainActivity : AppCompatActivity() {
             Motivation.Profile.CUSTOM
         )
         sp.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, etiketler)
-        sp.setSelection(profiller.indexOf(Motivation.getProfile(this)).coerceAtLeast(3))
+
+        // coerceAtLeast(3) idi: alt siniri 3'e cektigi icin KAYDEDILMIS profil
+        // ne olursa olsun index 3'e ("Ateist / Diger") zipliyordu, sonra da
+        // dinleyici bu yanlis secimi prefs'e yazip gercek secimi siliyordu.
+        // Dogrusu 0: indexOf bulamazsa (-1) ilk maddeye dus.
+        sp.setSelection(profiller.indexOf(Motivation.getProfile(this)).coerceAtLeast(0))
+        val ilk = sp.ignoreFirstSelection()
         sp.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(p: AdapterView<*>?, v: android.view.View?, i: Int, id: Long) {
+                if (ilk[0]) return
                 Motivation.setProfile(this@MainActivity, profiller[i])
             }
             override fun onNothingSelected(p: AdapterView<*>?) {}
@@ -138,15 +158,14 @@ class MainActivity : AppCompatActivity() {
         val seviyeler = listOf(Hassasiyet.DENGELI, Hassasiyet.SIKI, Hassasiyet.KATI)
         sp.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, etiketler)
 
-        val kayitli = prefs.getString(KEY_SENS, Hassasiyet.DENGELI.name)!!
-        val aktif = runCatching { Hassasiyet.valueOf(kayitli) }.getOrDefault(Hassasiyet.DENGELI)
-        Hassasiyet.aktif = aktif
-        sp.setSelection(seviyeler.indexOf(aktif).coerceAtLeast(0))
+        Hassasiyet.load(this)
+        sp.setSelection(seviyeler.indexOf(Hassasiyet.aktif).coerceAtLeast(0))
 
+        val ilk = sp.ignoreFirstSelection()
         sp.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(p: AdapterView<*>?, v: android.view.View?, i: Int, id: Long) {
-                Hassasiyet.aktif = seviyeler[i]
-                prefs.edit().putString(KEY_SENS, seviyeler[i].name).apply()
+                if (ilk[0]) return
+                Hassasiyet.save(this@MainActivity, seviyeler[i])
                 refresh()
             }
             override fun onNothingSelected(p: AdapterView<*>?) {}
@@ -162,6 +181,17 @@ class MainActivity : AppCompatActivity() {
         if (!ForegroundAppWatcher(this).hasPermission()) {
             toast(getString(R.string.toast_usage_first)); return
         }
+        // Tercih edilen yol: erişilebilirlik servisinin takeScreenshot'ı.
+        // Ekran yakalama izni sormaz, ekran kaydı göstergesi çıkarmaz,
+        // bildirim içeriklerini gizletmez ve görevlerden silinince sistem
+        // servisi yeniden bağladığı için koruma kendiliğinden geri gelir.
+        if (Guard.startViaA11y(this)) {
+            toast(getString(R.string.toast_active))
+            refresh()
+            return
+        }
+
+        // Yedek yol: MediaProjection (API 30 altı ya da erişilebilirlik kapalı)
         val mpm = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         projectionLauncher.launch(mpm.createScreenCaptureIntent())
     }
@@ -179,7 +209,7 @@ class MainActivity : AppCompatActivity() {
         val remaining = Config.DISABLE_DELAY_MS - (now - requestedAt)
         if (remaining > 0) { toast("${remaining / 1000}s"); return }
 
-        stopService(Intent(this, ScreenGuardService::class.java))
+        Guard.stop(this)
         prefs.edit().remove(KEY_STOP_REQUEST).apply()
         toast(getString(R.string.toast_stopped))
         refresh()
@@ -211,6 +241,9 @@ class MainActivity : AppCompatActivity() {
                 append("hata         ")
                     .append(d.getString(ScreenGuardService.D_MODEL_ERR, "-")).append('\n')
             }
+            append("koruma       ").append(if (Guard.isEnabled(this@MainActivity)) "ACIK" else "kapali")
+            append('\n')
+            append("kaynak       ").append(d.getString(ScreenGuardService.D_SOURCE, "-")).append('\n')
             append("aktif profil ").append(d.getString(ScreenGuardService.D_SENS, "-")).append('\n')
             append("son paket    ").append(d.getString(ScreenGuardService.D_LAST_PKG, "-")).append('\n')
             append("analiz kare  ").append(d.getInt(ScreenGuardService.D_FRAMES, 0)).append('\n')
@@ -241,6 +274,5 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val KEY_STOP_REQUEST = "stop_requested_at"
-        private const val KEY_SENS = "sensitivity"
     }
 }

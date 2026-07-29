@@ -29,10 +29,59 @@ class PerdeAccessibilityService : AccessibilityService() {
     private var lastUrl: String? = null
     private var lastBlockAt = 0L
 
+    /**
+     * Görsel tespit döngüsü. MediaProjection yolunda bu döngüyü
+     * ScreenGuardService sürüyor; erişilebilirlik yolunda buraya taşındı
+     * çünkü ekran görüntüsü yalnızca bu servis örneği üzerinden alınabiliyor.
+     */
+    private var loop: DetectionLoop? = null
+
     override fun onServiceConnected() {
         super.onServiceConnected()
+        instance = this
         overlay = OverlayManager(this)
         Log.i(TAG, "Erişilebilirlik katmanı aktif")
+
+        // Görevlerden silinme / süreç öldürülmesi sonrası toparlanma.
+        // Sistem erişilebilirlik servislerini her zaman yeniden bağlar.
+        // MediaProjection'da bunu yapmak anlamsızdı (token kayboluyor,
+        // kullanıcıdan yeniden onay gerekiyordu); takeScreenshot yolunda
+        // token yok, o yüzden koruma kullanıcı hiçbir şey yapmadan kaldığı
+        // yerden devam edebiliyor.
+        if (Guard.isEnabled(this)) {
+            Log.i(TAG, "Koruma açık bırakılmıştı, döngü yeniden başlatılıyor")
+            startLoop()
+        }
+    }
+
+    fun startLoop() {
+        if (loop != null) return
+        if (!Guard.a11yCaptureAvailable()) {
+            Log.w(TAG, "takeScreenshot kullanılamıyor (API < 30), döngü başlatılmadı")
+            return
+        }
+        loop = DetectionLoop(this) { worker ->
+            // takeScreenshot geri çağrısını döngünün kendi iş parçacığına
+            // yönlendiriyoruz; tick() ile aynı yerde kalsın.
+            A11yCapturer(java.util.concurrent.Executor { worker.post(it) })
+        }.also { it.start() }
+    }
+
+    fun stopLoop() {
+        loop?.stop()
+        loop = null
+    }
+
+    override fun onUnbind(intent: android.content.Intent?): Boolean {
+        stopLoop()
+        instance = null
+        return super.onUnbind(intent)
+    }
+
+    override fun onDestroy() {
+        stopLoop()
+        instance = null
+        super.onDestroy()
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -89,6 +138,15 @@ class PerdeAccessibilityService : AccessibilityService() {
 
     companion object {
         private const val TAG = "PerdeA11y"
+
+        /**
+         * Bagli servis ornegi. takeScreenshot() yalnizca servis ornegi
+         * uzerinden cagrilabiliyor, o yuzden disariya bu sekilde aciliyor.
+         * Sistem servisi baglar/koparir; null ise ekran goruntusu alinamaz.
+         */
+        @Volatile
+        var instance: PerdeAccessibilityService? = null
+            private set
 
         private val URL_BAR_IDS = mapOf(
             "com.android.chrome" to listOf("com.android.chrome:id/url_bar"),

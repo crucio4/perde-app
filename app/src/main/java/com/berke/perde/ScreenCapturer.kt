@@ -22,7 +22,7 @@ class ScreenCapturer(
     private val projection: MediaProjection,
     private val metrics: DisplayMetrics,
     private val handler: Handler
-) {
+) : FrameSource {
 
     private var imageReader: ImageReader? = null
     private var virtualDisplay: VirtualDisplay? = null
@@ -45,7 +45,7 @@ class ScreenCapturer(
     private val width = (metrics.widthPixels / Config.CAPTURE_DOWNSCALE).coerceAtLeast(1)
     private val height = (metrics.heightPixels / Config.CAPTURE_DOWNSCALE).coerceAtLeast(1)
 
-    fun start(): Boolean {
+    override fun start(): Boolean {
         if (running) return true
         return try {
             imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
@@ -67,7 +67,7 @@ class ScreenCapturer(
         }
     }
 
-    fun stop() {
+    override fun stop() {
         virtualDisplay?.release()
         virtualDisplay = null
         imageReader?.close()
@@ -78,7 +78,11 @@ class ScreenCapturer(
         Log.i(TAG, "Yakalama durdu")
     }
 
-    fun isRunning() = running
+    override fun isRunning() = running
+
+    /** MediaProjection korumali icerigi bildirmez; kare gelmemesi durgun
+     *  ekran da olabilir. Kesin cevap icin A11yCapturer gerekiyor. */
+    override fun isSecureBlocked() = false
 
     /**
      * Ekrandaki guncel kare.
@@ -90,7 +94,7 @@ class ScreenCapturer(
      *
      * @return ekranda duran icerik; yakalama baslayali hic kare gelmediyse null
      */
-    fun grabFrame(): Bitmap? {
+    override fun grabFrame(): Bitmap? {
         val fresh = acquireFresh()
         if (fresh != null) {
             lastFrame?.recycle()
@@ -98,9 +102,6 @@ class ScreenCapturer(
         }
         return lastFrame
     }
-
-    /** Hic kare alinabildi mi? Kare gelmiyorsa icerik FLAG_SECURE olabilir. */
-    fun hasFrame(): Boolean = lastFrame != null
 
     private fun acquireFresh(): Bitmap? {
         val reader = imageReader ?: return null

@@ -14,7 +14,8 @@
     <application
         android:allowBackup="false"
         android:label="Perde"
-        android:icon="@android:drawable/ic_lock_lock"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:theme="@style/Theme.AppCompat.DayNight">
 
         <activity
@@ -26,9 +27,14 @@
             </intent-filter>
         </activity>
 
+        <!-- stopWithTask=false: kullanıcı uygulamayı son kullanılanlardan
+             silince servis ölmesin. Not: MediaProjection yolunda süreç
+             gerçekten öldürülürse token kaybolduğu için koruma yine de
+             geri gelemez; kalıcılık isteniyorsa erişilebilirlik yolu şart. -->
         <service
             android:name=".ScreenGuardService"
             android:exported="false"
+            android:stopWithTask="false"
             android:foregroundServiceType="mediaProjection" />
 
         <service

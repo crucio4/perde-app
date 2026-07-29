@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Iki perde kanadi.
+
+  Adaptive icon'da 108x108dp'nin ortadaki 72x72'si guvenli bolge; disi
+  launcher tarafindan kirpilabiliyor. Sekiller bu yuzden ~24..84 araliginda
+  tutuldu.
+
+  Her kanat: dis kenar duz, ic kenar ice dogru kavisli (perdenin toplanmis
+  hali). Altta beyazdan yariseffafa giden degrade, gorseldeki yumusak
+  kivrim golgesini verir.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Sol kanat -->
+    <path android:pathData="M30,30 L48,26 C48,48 44,66 30,78 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="0" android:startY="26"
+                android:endX="0" android:endY="82"
+                android:type="linear">
+                <item android:offset="0.0" android:color="#FFFFFFFF" />
+                <item android:offset="0.65" android:color="#FFF6F2FF" />
+                <item android:offset="1.0" android:color="#B8DCCBFF" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path
+        android:pathData="M30,30 L48,26 L48,82 L30,82 Z"
+        android:fillColor="#FFFFFFFF" />
+
+    <!-- Sag kanat: solun aynasi -->
+    <path android:pathData="M78,30 L60,26 C60,48 64,66 78,78 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="0" android:startY="26"
+                android:endX="0" android:endY="82"
+                android:type="linear">
+                <item android:offset="0.0" android:color="#FFFFFFFF" />
+                <item android:offset="0.65" android:color="#FFF6F2FF" />
+                <item android:offset="1.0" android:color="#B8DCCBFF" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path
+        android:pathData="M78,30 L60,26 L60,82 L78,82 Z"
+        android:fillColor="#FFFFFFFF" />
+</vector>
