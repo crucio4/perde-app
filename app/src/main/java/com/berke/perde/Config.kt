@@ -365,8 +365,18 @@ object Adaptive {
     /** Skor uzun süre düşükse örnekleme aralığını uzat. */
     const val ENABLED = true
 
-    /** Normal aralık (ms). */
-    const val FAST_INTERVAL_MS = 1000L
+    /**
+     * Normal aralık (ms).
+     *
+     * Tespit süresinin büyük kısmı buradan geliyor: pencere oylaması
+     * WINDOW_HITS_REQUIRED kare istiyor, yani en hızlı blok
+     * 5 × aralık kadar sürüyor. 1000 ms'te bu 5 saniye, üstüne EMA ve
+     * asenkron ekran görüntüsü gecikmesi binince fark ediliyordu.
+     *
+     * 600 ms, takeScreenshot'ın 333 ms'lik sistem sınırının rahatça
+     * üstünde ve en hızlı bloğu 3 saniyeye indiriyor.
+     */
+    const val FAST_INTERVAL_MS = 600L
 
     /** Sakin moddaki aralık (ms). */
     const val SLOW_INTERVAL_MS = 3000L

@@ -211,6 +211,16 @@ class DetectionLoop(
             else -> "muaf ($readableFrames/${SecurePolicy.SECURE_WARMUP_FRAMES})"
         }
 
+        // SIRA KRİTİK: grabFrame() aynı zamanda bir sonraki ekran görüntüsü
+        // isteğini başlatan pompadır. Eskiden isSecureBlocked() kontrolü
+        // bunun ÜSTÜNDEYDİ ve doğru çıkınca return ediyordu — yani tek bir
+        // başarısız istek kalıcı "korumalı" durumuna kilitliyordu: bir daha
+        // hiç istek gönderilmiyor, durum hiç güncellenmiyor, tespit sessizce
+        // ölüyordu. Pompa artık her tick'te koşulsuz çalışıyor.
+        //
+        // NOT: dönen Bitmap kaynağa ait, burada recycle EDİLMEZ.
+        val frame: Bitmap? = source.grabFrame()
+
         // --- FLAG_SECURE, 1. biçim: kaynak açıkça "göremiyorum" diyor ---
         // takeScreenshot ERROR_TAKE_SCREENSHOT_SECURE_WINDOW döndürüyor.
         // Bu tahmin değil kesin bilgi, o yüzden eşik düşük tutuldu.
@@ -230,9 +240,6 @@ class DetectionLoop(
             return
         }
         secureErrorStreak = 0
-
-        // NOT: dönen Bitmap kaynağa ait, burada recycle EDİLMEZ.
-        val frame: Bitmap? = source.grabFrame()
 
         // --- FLAG_SECURE, 2. biçim: hiç kare gelmiyor ---
         // MediaProjection gizli sekmede siyah kare değil, HİÇ kare üretmiyor.

@@ -31,6 +31,12 @@ class A11yCapturer(private val executor: Executor) : FrameSource {
     @Volatile private var inFlight = false
     @Volatile private var secureBlocked = false
 
+    /** En son karenin alindigi an. Bayat kare dondurmemek icin. */
+    @Volatile private var latestAt = 0L
+
+    /** Istegin gonderildigi an. Geri cagri kaybolursa kurtulmak icin. */
+    @Volatile private var inFlightSince = 0L
+
     override fun start(): Boolean {
         if (running) return true
         if (PerdeAccessibilityService.instance == null) {
@@ -56,15 +62,33 @@ class A11yCapturer(private val executor: Executor) : FrameSource {
 
     override fun isSecureBlocked() = secureBlocked
 
+    /**
+     * @return YALNIZCA taze kare. takeScreenshot her cagrida guncel ekrani
+     *         verdigi icin bayat kare tutmanin bir gerekcesi yok — dahasi
+     *         tehlikeli: istek boru hatti bir kez takilirsa donmus kare
+     *         sonsuza kadar puanlanir ve tespit sessizce olur. Bayatladiysa
+     *         null donuyoruz, dongu bunu "goremiyorum" olarak isliyor.
+     */
     override fun grabFrame(): Bitmap? {
-        if (running) request()
-        return latest
+        if (!running) return null
+        request()
+        val f = latest ?: return null
+        return if (System.currentTimeMillis() - latestAt <= STALE_AFTER_MS) f else null
     }
 
     private fun request() {
         val svc = PerdeAccessibilityService.instance ?: return
-        if (inFlight) return
+
+        val now = System.currentTimeMillis()
+        if (inFlight) {
+            // Geri cagri kayboldu: sistem pencere gecislerinde istegi
+            // dusurebiliyor. Zaman asimi olmasa bayrak sonsuza kadar true
+            // kalir, bir daha hic istek gonderilmez ve yakalama sessizce olur.
+            if (now - inFlightSince < IN_FLIGHT_TIMEOUT_MS) return
+            Log.w(TAG, "takeScreenshot geri cagrisi gelmedi, istek sifirlaniyor")
+        }
         inFlight = true
+        inFlightSince = now
 
         try {
             svc.takeScreenshot(
@@ -112,6 +136,7 @@ class A11yCapturer(private val executor: Executor) : FrameSource {
 
             latest?.recycle()
             latest = scaled
+            latestAt = System.currentTimeMillis()
         } catch (e: Exception) {
             Log.e(TAG, "Kare donusturulemedi: ${e.message}")
         } finally {
@@ -121,5 +146,13 @@ class A11yCapturer(private val executor: Executor) : FrameSource {
 
     // Kullanilabilirlik kontrolu bilerek burada DEGIL, Guard'da:
     // bu sinifi yuklemek API 30 tiplerine dokunuyor.
-    companion object { private const val TAG = "A11yCapturer" }
+    companion object {
+        private const val TAG = "A11yCapturer"
+
+        /** Bu yastan eski kare kullanilmaz. */
+        private const val STALE_AFTER_MS = 2_500L
+
+        /** Bu sure gecince cevapsiz istek dusmus sayilir ve yenisi gonderilir. */
+        private const val IN_FLIGHT_TIMEOUT_MS = 2_000L
+    }
 }
