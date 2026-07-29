@@ -88,6 +88,19 @@ object Config {
      */
     const val MAX_BLOCK_DURATION_MS = 8_000L
 
+    /**
+     * Kaynak bu süre boyunca hiç kullanılabilir kare vermezse baştan kurulur.
+     *
+     * Yakalama boru hattı asenkron ve sistem tarafında birçok şekilde
+     * takılabiliyor — geri çağrı düşer, oturum bayatlar, pencere geçişinde
+     * istek kaybolur. Her bir takılma biçimini ayrı ayrı kovalamak yerine
+     * gözcü koyuyoruz: kare akmıyorsa kaynağı durdur, yeniden kur.
+     *
+     * Bu, kullanıcının "uygulamayı açıp Başlat'a basınca düzeliyor" diye
+     * tarif ettiği manuel kurtarmanın otomatik hâli.
+     */
+    const val SOURCE_WATCHDOG_MS = 5_000L
+
     // ---------- Kendine karşı koruma ----------
     /**
      * Uygulamayı durdurmak istediğinde beklemen gereken süre (ms).

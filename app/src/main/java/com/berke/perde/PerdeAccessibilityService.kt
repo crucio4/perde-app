@@ -29,6 +29,9 @@ class PerdeAccessibilityService : AccessibilityService() {
     private var lastUrl: String? = null
     private var lastBlockAt = 0L
 
+    /** URL bloğunun zorunlu kalkması için. */
+    private val uiHandler = android.os.Handler(android.os.Looper.getMainLooper())
+
     /**
      * Görsel tespit döngüsü. MediaProjection yolunda bu döngüyü
      * ScreenGuardService sürüyor; erişilebilirlik yolunda buraya taşındı
@@ -113,6 +116,11 @@ class PerdeAccessibilityService : AccessibilityService() {
             lastBlockAt = now
             Log.i(TAG, "URL bloğu tetiklendi")
             overlay.show("Kapat.")
+            // Bu katmanın kapatma yolu YOKTU: bir kez tetiklenseydi ekran
+            // kalıcı siyah kalırdı, geri/ana ekran/bildirim paneli overlay'in
+            // altında olduğu için çıkış da olmazdı. Görsel katmandaki aynı
+            // hatayı düzeltmiştik, burada gözden kaçmış.
+            uiHandler.postDelayed({ overlay.hide() }, Config.MAX_BLOCK_DURATION_MS)
         }
     }
 

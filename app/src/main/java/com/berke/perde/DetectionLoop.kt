@@ -75,6 +75,9 @@ class DetectionLoop(
     /** Blok kalktıktan sonra bu ana kadar yeniden bloklanmaz. */
     private var blockCooldownUntil = 0L
 
+    /** En son ne zaman kullanılabilir kare işlendi. Gözcü bunu izliyor. */
+    private var lastGoodFrameAt = 0L
+
     private val runnable = object : Runnable {
         override fun run() {
             try { tick() } catch (e: Exception) { Log.e(TAG, "tick hatası", e) }
@@ -129,7 +132,17 @@ class DetectionLoop(
         secureBlackStreak = 0
         secureErrorStreak = 0
         starvedTicks = 0
-        Log.i(TAG, "Blok kaldırıldı: $sebep")
+
+        // Blok boyunca tick() en başta dönüyordu, yani kaynağa 8 saniye hiç
+        // dokunulmadı. O aradan sonra kaynağı kaldığı yerden sürdürmek
+        // güvenilir değil: kullanıcı "bir kez bloklandıktan sonra bir daha
+        // tespit etmiyor, Başlat'a basınca düzeliyor" diye bildirdi ve
+        // Başlat'ın yaptığı tam olarak buydu. Baştan kurmak bir tick'e mal
+        // oluyor, karşılığında bütün bir takılma sınıfı ortadan kalkıyor.
+        source.stop()
+        lastGoodFrameAt = 0L
+
+        Log.i(TAG, "Blok kaldırıldı ($sebep), kaynak yeniden kurulacak")
     }
 
     private fun tick() {
@@ -169,6 +182,7 @@ class DetectionLoop(
                 starvedTicks = 0
                 secureBlackStreak = 0
                 secureErrorStreak = 0
+                lastGoodFrameAt = 0L
             }
             lastWatchedPackage = null
             return
@@ -185,6 +199,26 @@ class DetectionLoop(
         }
 
         if (!source.isRunning() && !source.start()) return
+
+        // --- Gözcü ---
+        // Kaynak açık ama kare akmıyorsa boru hattı takılmıştır. Asenkron
+        // yapı birçok şekilde takılabiliyor (geri çağrı düşer, oturum
+        // bayatlar, pencere geçişinde istek kaybolur); her birini ayrı
+        // kovalamak yerine kaynağı baştan kuruyoruz.
+        //
+        // Korumalı içerikte kare gelmemesi normaldir, orada gözcü susmalı —
+        // yoksa bankacılık uygulamasındayken boşuna durdurup başlatır.
+        if (!source.isSecureBlocked() && lastGoodFrameAt != 0L &&
+            System.currentTimeMillis() - lastGoodFrameAt > Config.SOURCE_WATCHDOG_MS
+        ) {
+            Log.w(TAG, "Kaynak ${Config.SOURCE_WATCHDOG_MS}ms'dir kare vermiyor, yeniden kuruluyor")
+            source.stop()
+            source.start()
+            differ.reset()
+            lastProbs = null
+            lastGoodFrameAt = 0L
+            return
+        }
 
         // "Göremiyorum" durumu iki halde blok sebebi sayılır:
         //
@@ -273,6 +307,7 @@ class DetectionLoop(
             return
         }
         secureBlackStreak = 0
+        lastGoodFrameAt = System.currentTimeMillis()
 
         // Buraya ulaştıysak kare gerçekten okunabildi (null değil, siyah değil).
         // Isınma eşiğini geçen uygulama "geçiş adayı" oluyor: bundan sonra
