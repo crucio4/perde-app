@@ -7,6 +7,7 @@ import org.tensorflow.lite.Interpreter
 import org.tensorflow.lite.gpu.CompatibilityList
 import org.tensorflow.lite.gpu.GpuDelegate
 import java.io.FileInputStream
+import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.channels.FileChannel
@@ -33,32 +34,66 @@ class NsfwClassifier(context: Context) {
     private val pixels = IntArray(Config.INPUT_SIZE * Config.INPUT_SIZE)
     private val output = Array(1) { FloatArray(NUM_CLASSES) }
 
+    /** Son yukleme hatasi. Tani ekraninda gosteriliyor. */
+    var lastError: String? = null
+        private set
+
     init {
-        try {
-            val options = Interpreter.Options().apply {
-                setNumThreads(2)
-                // GPU varsa kullan — inference maliyeti ciddi düşer, batarya için önemli
-                if (CompatibilityList().isDelegateSupportedOnThisDevice) {
-                    gpuDelegate = GpuDelegate()
-                    addDelegate(gpuDelegate)
-                    Log.i(TAG, "GPU delegate aktif")
-                }
-            }
-            interpreter = Interpreter(loadModel(context), options)
-            Log.i(TAG, "Model yüklendi")
-        } catch (e: Exception) {
-            Log.e(TAG, "Model yüklenemedi: ${e.message}", e)
+        // GPU delegate inference maliyetini ciddi dusuruyor ama dynamic-range
+        // quantize edilmis modellerde sik sik kurulamiyor. Basarisiz olursa
+        // CPU ile devam etmek DOGRU davranis — eskiden burada pes ediliyordu
+        // ve siniflandirici komple olu kaliyordu.
+        if (!tryInit(context, useGpu = true)) {
+            Log.w(TAG, "GPU ile kurulamadi, CPU ile deneniyor")
+            tryInit(context, useGpu = false)
         }
     }
 
+    private fun tryInit(context: Context, useGpu: Boolean): Boolean = try {
+        val options = Interpreter.Options().apply {
+            setNumThreads(2)
+            if (useGpu && CompatibilityList().isDelegateSupportedOnThisDevice) {
+                gpuDelegate = GpuDelegate()
+                addDelegate(gpuDelegate)
+            }
+        }
+        interpreter = Interpreter(loadModel(context), options)
+        lastError = null
+        Log.i(TAG, "Model yuklendi (gpu=$useGpu)")
+        true
+    } catch (e: Exception) {
+        Log.e(TAG, "Model yuklenemedi (gpu=$useGpu): ${e.message}", e)
+        lastError = "${if (useGpu) "gpu" else "cpu"}: ${e.javaClass.simpleName}: ${e.message}"
+        // Yarim kalan kaynaklari birak, yoksa ikinci deneme kirli state gorur
+        runCatching { gpuDelegate?.close() }
+        gpuDelegate = null
+        interpreter = null
+        false
+    }
+
     private fun loadModel(context: Context): ByteBuffer {
-        val fd = context.assets.openFd(MODEL_FILE)
-        FileInputStream(fd.fileDescriptor).use { stream ->
-            return stream.channel.map(
-                FileChannel.MapMode.READ_ONLY,
-                fd.startOffset,
-                fd.declaredLength
-            )
+        // Tercih edilen yol: memory-map. Bunun icin asset SIKISTIRILMAMIS olmali
+        // (app/build.gradle.kts -> androidResources { noCompress += "tflite" }).
+        try {
+            val fd = context.assets.openFd(MODEL_FILE)
+            FileInputStream(fd.fileDescriptor).use { stream ->
+                return stream.channel.map(
+                    FileChannel.MapMode.READ_ONLY,
+                    fd.startOffset,
+                    fd.declaredLength
+                )
+            }
+        } catch (e: IOException) {
+            // Asset sikistirilmissa openFd calismaz. Bu durumda tamamini
+            // bellege okumak tek secenek — ~4.5 MB, kabul edilebilir.
+            Log.w(TAG, "openFd basarisiz (asset sikistirilmis olabilir): ${e.message}")
+        }
+
+        context.assets.open(MODEL_FILE).use { input ->
+            val bytes = input.readBytes()
+            return ByteBuffer.allocateDirect(bytes.size)
+                .order(ByteOrder.nativeOrder())
+                .apply { put(bytes); rewind() }
         }
     }
 

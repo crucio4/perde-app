@@ -205,9 +205,12 @@ class MainActivity : AppCompatActivity() {
             // Baska bir uygulamada gezip buraya donunce burasi ne olculdugunu
             // gosterir. Sayaclar uygulama degisiminde sifirlanir.
             append("\n\n--- son olcum ---\n")
-            append("model        ")
-                .append(if (d.getBoolean(ScreenGuardService.D_MODEL_OK, false)) "OK" else "YUKLENMEDI")
-                .append('\n')
+            val modelOk = d.getBoolean(ScreenGuardService.D_MODEL_OK, false)
+            append("model        ").append(if (modelOk) "OK" else "YUKLENMEDI").append('\n')
+            if (!modelOk) {
+                append("hata         ")
+                    .append(d.getString(ScreenGuardService.D_MODEL_ERR, "-")).append('\n')
+            }
             append("aktif profil ").append(d.getString(ScreenGuardService.D_SENS, "-")).append('\n')
             append("son paket    ").append(d.getString(ScreenGuardService.D_LAST_PKG, "-")).append('\n')
             append("analiz kare  ").append(d.getInt(ScreenGuardService.D_FRAMES, 0)).append('\n')

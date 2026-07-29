@@ -68,7 +68,10 @@ class ScreenGuardService : Service() {
 
         // Model yuklenemediyse hicbir sey calismaz ve bu sessiz bir hata —
         // kullanicinin bunu gorebilmesi gerekiyor.
-        diag.edit().putBoolean(D_MODEL_OK, classifier.isReady()).apply()
+        diag.edit()
+            .putBoolean(D_MODEL_OK, classifier.isReady())
+            .putString(D_MODEL_ERR, classifier.lastError ?: "-")
+            .apply()
 
         workerThread = HandlerThread("perde-worker").also { it.start() }
         worker = Handler(workerThread.looper)
@@ -300,6 +303,7 @@ class ScreenGuardService : Service() {
         // --- Tani anahtarlari (MainActivity de okuyor) ---
         const val DIAG_PREFS = "perde_diag"
         const val D_MODEL_OK = "model_ok"
+        const val D_MODEL_ERR = "model_err"
         const val D_FRAMES = "frames"
         const val D_LAST_RAW = "last_raw"
         const val D_LAST_EMA = "last_ema"

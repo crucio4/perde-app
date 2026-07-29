@@ -34,7 +34,14 @@ android {
 dependencies {
     implementation("androidx.appcompat:appcompat:1.6.1")
     implementation("androidx.activity:activity-ktx:1.8.2")
-    implementation("org.tensorflow:tensorflow-lite:2.14.0")
-    implementation("org.tensorflow:tensorflow-lite-gpu:2.14.0")
-    implementation("org.tensorflow:tensorflow-lite-gpu-api:2.14.0")
+
+    // DIKKAT: bu surum, modeli uretirken kullandigin TensorFlow surumunden
+    // ESKI olmamali. Colab guncel TF ile cevirdiginde model yeni op
+    // surumleri iceriyor ve eski calisma zamani onlari tanimayip
+    // "Didn't find op for builtin opcode" ile Interpreter kurulumunu
+    // patlatiyor — model dosyasi saglam olsa bile.
+    // 2.17.0, org.tensorflow:tensorflow-lite altindaki en yeni surum.
+    implementation("org.tensorflow:tensorflow-lite:2.17.0")
+    implementation("org.tensorflow:tensorflow-lite-gpu:2.17.0")
+    implementation("org.tensorflow:tensorflow-lite-gpu-api:2.17.0")
 }
