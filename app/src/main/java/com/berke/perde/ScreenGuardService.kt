@@ -36,6 +36,9 @@ class ScreenGuardService : Service() {
     private lateinit var worker: Handler
 
     private var lastWatchedPackage: String? = null
+
+    /** Sadece tani logu icin. Sentinel deger, ilk tick'te pkg null olsa bile yazsin. */
+    private var lastLoggedPackage: String? = "<baslangic>"
     private var secureBlackStreak = 0
     private val differ = FrameDiffer()
     private val blackDetector = BlackFrameDetector()
@@ -59,7 +62,11 @@ class ScreenGuardService : Service() {
         workerThread = HandlerThread("perde-worker").also { it.start() }
         worker = Handler(workerThread.looper)
 
-        startForeground(NOTIF_ID, buildNotification())
+        // DIKKAT: burada startForeground() CAGIRMA.
+        // Manifest bu servisi mediaProjection turunde bildiriyor ve Android 14,
+        // o turdeki bir foreground service'i gecerli projeksiyon token'i olmadan
+        // baslatmayi SecurityException ile reddediyor. Token onStartCommand'a
+        // gelen intent ile geliyor, yani onCreate'te henuz yok.
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -70,18 +77,33 @@ class ScreenGuardService : Service() {
 
         val resultCode = intent?.getIntExtra(EXTRA_RESULT_CODE, Activity.RESULT_CANCELED)
             ?: Activity.RESULT_CANCELED
+        @Suppress("DEPRECATION")
         val data = intent?.getParcelableExtra<Intent>(EXTRA_RESULT_DATA)
 
-        if (resultCode == Activity.RESULT_OK && data != null && projection == null) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                startForeground(
-                    NOTIF_ID, buildNotification(),
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
-                )
-            }
+        // Projeksiyon izni olmadan bu servisin yapabilecegi hicbir sey yok.
+        // Sistem START_NOT_STICKY sayesinde bizi null intent ile yeniden
+        // baslatmiyor, yani bu dala normalde sadece bozuk bir cagri duser.
+        if (resultCode != Activity.RESULT_OK || data == null) {
+            Log.w(TAG, "Projeksiyon verisi yok (resultCode=$resultCode), servis durduruluyor")
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
+        if (projection == null) {
+            // SIRA ONEMLI: Android 14+ once mediaProjection turunde calisan bir
+            // foreground service istiyor, getMediaProjection() ondan sonra.
+            // Ters sirada SecurityException firlatiyor.
+            startForegroundCompat()
+
             val mpm = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
             projection = mpm.getMediaProjection(resultCode, data)?.apply {
                 registerCallback(projectionCallback, worker)
+            }
+
+            if (projection == null) {
+                Log.e(TAG, "getMediaProjection null dondu, servis durduruluyor")
+                stopSelf()
+                return START_NOT_STICKY
             }
 
             val metrics = DisplayMetrics().also {
@@ -92,10 +114,24 @@ class ScreenGuardService : Service() {
 
             projection?.let { capturer = ScreenCapturer(it, metrics, worker) }
             worker.post(loop)
-            Log.i(TAG, "Servis aktif")
+            Log.i(TAG, "Servis aktif (${metrics.widthPixels}x${metrics.heightPixels})")
         }
 
-        return START_STICKY
+        // MediaProjection token'i servis yeniden baslatmasini atlatamaz.
+        // START_STICKY olsaydi sistem bizi null intent ile diriltir ve
+        // hicbir sey yakalayamayan, sadece bildirim tutan bir zombi kalirdi.
+        return START_NOT_STICKY
+    }
+
+    private fun startForegroundCompat() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(
+                NOTIF_ID, buildNotification(),
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+            )
+        } else {
+            startForeground(NOTIF_ID, buildNotification())
+        }
     }
 
     private val loop = object : Runnable {
@@ -107,6 +143,14 @@ class ScreenGuardService : Service() {
 
     private fun tick() {
         val pkg = appWatcher.currentForegroundPackage()
+
+        // Tani logu: yakalama hic baslamiyorsa sebebi neredeyse her zaman
+        // burasidir — pkg null geliyordur (kullanim erisimi yok) ya da paket
+        // EXCLUDED_PACKAGES icindedir. Sadece paket degisince yaziyor.
+        if (pkg != lastLoggedPackage) {
+            lastLoggedPackage = pkg
+            Log.d(TAG, "on planda: $pkg  izlenecek=${appWatcher.shouldMonitor(pkg)}")
+        }
 
         // Kendi overlay'imiz açıkken öndeki paket değişmiş görünebilir; blok
         // durumundayken paket kontrolünü atla.

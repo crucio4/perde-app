@@ -1,8 +1,10 @@
 package com.berke.perde
 
+import android.Manifest
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.os.Build
@@ -35,11 +37,30 @@ class MainActivity : AppCompatActivity() {
         } else toast(getString(R.string.toast_denied))
     }
 
+    /**
+     * Bildirim izni reddedilse bile servis calisir — foreground service
+     * bildirimi sistem tarafindan zorunlu tutuluyor, sadece kullaniciya
+     * gorunmuyor. Yine de isteriz: servisin ayakta olup olmadigini
+     * anlamanin tek gorsel yolu o bildirim.
+     */
+    private val notifPermLauncher = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         prefs = getSharedPreferences("perde", Context.MODE_PRIVATE)
         status = findViewById(R.id.status)
+
+        // Android 13+ POST_NOTIFICATIONS'i runtime izni yapti; manifestte
+        // bildirmek yetmiyor.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            notifPermLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
 
         setupLanguage()
         setupProfile()
