@@ -39,6 +39,8 @@ class DetectionLoop(
         ScreenGuardService.DIAG_PREFS, Context.MODE_PRIVATE
     )
 
+    private val power = ctx.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+
     private var lastWatchedPackage: String? = null
     private var lastLoggedPackage: String? = "<baslangic>"
     private var lastProbs: FloatArray? = null
@@ -159,6 +161,24 @@ class DetectionLoop(
             if (System.currentTimeMillis() - overlayShownAt >= Config.MAX_BLOCK_DURATION_MS) {
                 blogonKaldir("süre doldu")
             }
+            return
+        }
+
+        // --- Ekran kapalıyken hiçbir şey yapma ---
+        // Kapalı ekranda takeScreenshot ya hata veriyor ya siyah kare
+        // döndürüyor. "Gizli moda geçiş" kuralı bunu okunabiliyordu-artık
+        // gizleniyor diye yorumlayıp blok basıyordu: kullanıcı telefonu
+        // bıraktığında ana ekran (okunabilir olduğu için geçiş adayı kümesine
+        // girmişti) her uyku-uyanma çevriminde tetikleniyor, 15-20 saniyede
+        // bir blok geliyordu. Ekranın kapanması gizli mod geçişi değildir.
+        //
+        // Ayrıca bu, bakılmayan bir ekranı analiz etmeyi de bitiriyor —
+        // bataryada doğrudan kazanç.
+        if (!power.isInteractive) {
+            secureErrorStreak = 0
+            secureBlackStreak = 0
+            starvedTicks = 0
+            lastGoodFrameAt = 0L
             return
         }
 
