@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Perde</string>
+    <string name="a11y_desc">Gizli sekme kör noktasını kapatmak için tarayıcı adres çubuğunu okur. Veri cihazdan çıkmaz.</string>
+
+    <string name="perm_overlay">1. Overlay izni ver</string>
+    <string name="perm_usage">2. Kullanım erişimi ver</string>
+    <string name="perm_a11y">3. Erişilebilirlik servisini aç</string>
+    <string name="btn_start">4. Başlat</string>
+    <string name="btn_stop">Durdur (gecikmeli)</string>
+
+    <string name="label_profile">Mesaj profili</string>
+    <string name="label_language">Dil</string>
+    <string name="label_sensitivity">Hassasiyet</string>
+    <string name="label_show_original">Orijinal metni göster</string>
+
+    <string name="profile_muslim">Müslüman</string>
+    <string name="profile_christian">Hristiyan</string>
+    <string name="profile_jewish">Yahudi</string>
+    <string name="profile_secular">Ateist / Diğer</string>
+    <string name="profile_custom">Kendi mesajlarım</string>
+
+    <string name="sens_balanced">Dengeli — sadece açık içerik</string>
+    <string name="sens_strict">Sıkı — güçlü müstehcen içerik de</string>
+    <string name="sens_severe">Katı — Instagram/TikTok da (yanlış tetiklenir)</string>
+
+    <string name="disclaimer_translation">Uygulamadaki çeviriler, kamu malı orijinal metinlerden yapılmış özgün aktarımlardır; yetkili meal değildir. Kendi tercih ettiğiniz mealle karşılaştırabilmeniz için referanslar gösterilir.</string>
+
+    <string name="toast_overlay_first">Önce overlay izni ver</string>
+    <string name="toast_usage_first">Önce kullanım erişimi ver</string>
+    <string name="toast_active">Perde aktif</string>
+    <string name="toast_denied">Ekran yakalama izni verilmedi</string>
+    <string name="toast_stopped">Perde durduruldu</string>
+
+    <string name="notif_title">Perde aktif</string>
+    <string name="notif_text">Ekran içeriği cihaz üzerinde analiz ediliyor</string>
+</resources>

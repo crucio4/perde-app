@@ -1,0 +1,1 @@
+Model dosyasi (nsfw.tflite) buraya konulacak. Bkz. KURULUM.md Adim 1.

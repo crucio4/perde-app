@@ -1,0 +1,47 @@
+name: APK Derle
+
+# Her push'ta ve manuel tetiklemede çalışır
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Kodu çek
+        uses: actions/checkout@v4
+
+      - name: Java 17 kur
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Android SDK kur
+        uses: android-actions/setup-android@v3
+
+      - name: Gradle kur
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Model dosyası var mı kontrol et
+        run: |
+          if [ ! -f app/src/main/assets/nsfw.tflite ]; then
+            echo "::warning::assets/nsfw.tflite YOK. APK derlenir ama sınıflandırma çalışmaz."
+          else
+            echo "Model bulundu: $(du -h app/src/main/assets/nsfw.tflite)"
+          fi
+
+      - name: Debug APK derle
+        run: gradle assembleDebug --no-daemon --stacktrace
+
+      - name: APK'yı yükle
+        uses: actions/upload-artifact@v4
+        with:
+          name: perde-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          retention-days: 30

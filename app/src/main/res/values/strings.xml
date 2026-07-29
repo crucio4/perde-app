@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Perde</string>
+    <string name="a11y_desc">Reads the browser address bar to cover the private-tab blind spot. No data leaves your device.</string>
+
+    <string name="perm_overlay">1. Grant overlay permission</string>
+    <string name="perm_usage">2. Grant usage access</string>
+    <string name="perm_a11y">3. Enable accessibility service</string>
+    <string name="btn_start">4. Start</string>
+    <string name="btn_stop">Stop (delayed)</string>
+
+    <string name="label_profile">Message profile</string>
+    <string name="label_language">Language</string>
+    <string name="label_sensitivity">Sensitivity</string>
+    <string name="label_show_original">Show original scripture text</string>
+
+    <string name="profile_muslim">Muslim</string>
+    <string name="profile_christian">Christian</string>
+    <string name="profile_jewish">Jewish</string>
+    <string name="profile_secular">Atheist / Other</string>
+    <string name="profile_custom">My own messages</string>
+
+    <string name="sens_balanced">Balanced — explicit content only</string>
+    <string name="sens_strict">Strict — also strongly suggestive</string>
+    <string name="sens_severe">Severe — also Instagram/TikTok (false positives likely)</string>
+
+    <string name="disclaimer_translation">Scripture translations in this app are original renderings from public-domain source texts, not authoritative translations. References are shown so you can check against your preferred edition.</string>
+
+    <string name="toast_overlay_first">Grant overlay permission first</string>
+    <string name="toast_usage_first">Grant usage access first</string>
+    <string name="toast_active">Perde is active</string>
+    <string name="toast_denied">Screen capture permission denied</string>
+    <string name="toast_stopped">Perde stopped</string>
+
+    <string name="notif_title">Perde active</string>
+    <string name="notif_text">Screen content is analyzed on this device</string>
+</resources>
