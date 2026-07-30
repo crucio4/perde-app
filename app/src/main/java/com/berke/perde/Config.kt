@@ -33,10 +33,21 @@ object Config {
 
     // ---------- Eşikler ----------
     /**
-     * HARD: tek kare bu eşiği geçerse anında blokla. Çok yüksek tut,
+     * HARD: pencere oylamasını atlayan hızlı yol. Çok yüksek tut,
      * sadece tartışmasız durumlar için.
      */
     const val HARD_THRESHOLD = 0.94f
+
+    /**
+     * HARD eşiğinin kaç ARDIŞIK karede geçilmesi gerektiği.
+     *
+     * 1 idi ve "anında blok" oradan geliyordu: model bir çöp adam
+     * çizimini yüksek olasılıkla `hentai` sayınca ekran o saniye
+     * kapanıyordu. Tek karelik bir softmax çıktısı hiçbir zaman o kadar
+     * güvenilir değil. 2 kare ≈ 1.2 saniye; hızlı yol duruyor, tek
+     * karelik sapmalar eleniyor.
+     */
+    const val HARD_FRAMES_REQUIRED = 2
 
     /**
      * SOFT: tek başına yetmez. Son N karenin K tanesi bu eşiği geçmeli.
@@ -101,6 +112,16 @@ object Config {
      */
     const val SOURCE_WATCHDOG_MS = 5_000L
 
+    /**
+     * Erişilebilirlik okuması bu yaştan sonra kullanılmaz (ms).
+     *
+     * Okuma asenkron: döngü her tick'te yeni okuma ister, sonucu bir
+     * sonraki tick'te görür. Sakin moddaki 3 sn'lik aralık + okuma
+     * gecikmesi bu sınırın altında kalıyor. Bayat metinle karar vermek,
+     * kullanıcının çoktan çıktığı bir sayfa yüzünden bloklamak demek.
+     */
+    const val CONTENT_STALE_MS = 4_000L
+
     // ---------- Kendine karşı koruma ----------
     /**
      * Uygulamayı durdurmak istediğinde beklemen gereken süre (ms).
@@ -161,18 +182,14 @@ object Config {
     /**
      * Tarayıcılar.
      *
-     * "Korumalı içerik" sinyalinin blok sebebi sayıldığı TEK yer burası.
+     * TESPİT İÇİN KULLANILMIYOR. İçerik analizi paketin ne olduğuna
+     * bakmıyor — hangi uygulama olursa olsun ekranda ne yazdığına bakıyor.
+     * Listede olmayan bir tarayıcı da, hiç duyulmamış bir uygulama da
+     * aynı şekilde kapsanıyor.
      *
-     * Neden: kapatmak istediğimiz kör nokta gizli sekme, o da bir tarayıcı
-     * olgusu. FLAG_SECURE'u meşru kullanan bir sürü uygulama var —
-     * bankacılık, şifre yöneticileri, DRM'li video, 2FA ekranları. Bu
-     * ayrım olmadan "göremiyorum = blokla" kuralı onların hepsini
-     * kullanılamaz hale getirir: uygulamayı açarsın, iki saniye sonra
-     * ana ekrana atılırsın.
-     *
-     * Bedeli: listede olmayan bir tarayıcının gizli sekmesi kaçar. Bu
-     * bilinçli takas — yanlış tarafta hata yapmak bankacılık uygulamanı
-     * bozmaktan iyidir.
+     * Bu liste yalnızca son çare kuralında geçiyor: "ne piksel ne metin
+     * okunabiliyor" durumunda (varsayılan olarak kapalı) sınırlamayı
+     * tarayıcılarla tutmak için. Orada eksik kalması bir şey kaybettirmez.
      */
     val BROWSER_PACKAGES = setOf(
         "com.android.chrome",
@@ -217,30 +234,39 @@ object Config {
 // ---------------------------------------------------------------
 // FLAG_SECURE / kör nokta politikası
 // ---------------------------------------------------------------
+/**
+ * ARTIK ASIL SAVUNMA BURASI DEĞİL.
+ *
+ * Gizli sekme kör noktası içerik analiziyle kapanıyor: ekranın PİKSELİ
+ * görünmese de METNİ okunabiliyor (bkz. ScreenReader) ve karar okunan
+ * içerikten veriliyor (bkz. ContentAnalyzer). "Göremiyorum" durumu
+ * kendi başına bir blok sebebi değil.
+ *
+ * Bu obje geriye kalan tek uç durumu yönetiyor: ne piksel var ne metin.
+ * DRM'li video oynatıcı, bazı 2FA ve bankacılık ekranları buraya düşüyor
+ * — hepsi meşru. Bu yüzden varsayılan KAPALI.
+ */
 object SecurePolicy {
 
     private const val PREFS = "perde"
     private const val KEY = "block_on_secure"
 
     /**
-     * Tarayıcıda ekran okunamıyorsa (= gizli sekme) bloklansın mı?
+     * Tarayıcıda ne piksel ne metin okunabiliyorsa bloklansın mı?
      *
-     * true  : blokla. "Göremiyorsam izin vermem."
-     * false : gizli sekme kör nokta olarak kalır.
+     * false (varsayılan) : hayır. Kanıt yoksa blok yok.
+     * true               : evet — yalnızca tarayıcılarda, yalnızca hiçbir
+     *                      şey okunamadığında. "Göremiyorsam izin vermem."
      *
-     * ÖNEMLİ: bu kural yalnızca Config.BROWSER_PACKAGES içindeki
-     * uygulamalarda işler. Bankacılık, şifre yöneticisi, DRM'li video ve
-     * 2FA ekranları da FLAG_SECURE kullanıyor; ayrım olmasa hepsi
-     * bloklanır ve uygulama kullanılamaz hale gelirdi.
-     *
-     * Gizli sekmeyi normal işleri için kullanan biri bunu kapatabilir.
+     * Netflix'in oynatma ekranı bunun klasik yanlış tetiklenmesiydi;
+     * artık varsayılan kapalı olduğu için gelmiyor.
      */
     @Volatile
-    var blockOnSecure = true
+    var blockOnSecure = false
 
     fun load(ctx: android.content.Context) {
         blockOnSecure = ctx.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
-            .getBoolean(KEY, true)
+            .getBoolean(KEY, false)
     }
 
     fun save(ctx: android.content.Context, value: Boolean) {
@@ -249,68 +275,15 @@ object SecurePolicy {
             .edit().putBoolean(KEY, value).apply()
     }
 
-    /** Kaç ardışık siyah kare sonrası tetiklensin. Geçiş animasyonlarını eler. */
-    const val SECURE_BLACK_FRAMES_REQUIRED = 4
-
     /**
-     * Kaç ardışık tick hiç kare alamayınca "korumalı içerik" sayılsın.
+     * Kaç ardışık tick boyunca hem kör hem sessiz kalınca tetiklensin.
      *
-     * Gizli sekmede VirtualDisplay siyah kare değil, hiç kare üretmiyor —
-     * siyah kare tespiti bu durumu göremiyor, çünkü inceleyecek kare yok.
-     *
-     * Siyah kare eşiğinden yüksek tutuldu: yakalama yeni başladığında ilk
-     * karenin gelmesi bir iki saniye sürebiliyor ve o pencerede yanlış
-     * tetiklenmek istemiyoruz.
+     * Yüksek tutuldu: uygulama açılışı, sekme geçişi ve tam ekran video
+     * başlangıcı gibi anlarda hem kare hem erişilebilirlik ağacı bir iki
+     * saniyeliğine boş kalabiliyor. 8 tick ≈ 5 saniye kesintisiz sessizlik.
      */
-    const val SECURE_STARVED_TICKS_REQUIRED = 6
-
-    /**
-     * Kaç ardışık "korumalı içerik" hatasından sonra tetiklensin.
-     *
-     * takeScreenshot bu durumu ERROR_TAKE_SCREENSHOT_SECURE_WINDOW ile
-     * açıkça bildiriyor — tahmin değil kesin bilgi olduğu için eşik düşük.
-     * Diğer ikisi sezgisel olduğundan daha yüksek tutuldu.
-     */
-    const val SECURE_ERROR_FRAMES_REQUIRED = 2
-
-    /**
-     * Bir uygulamanın "gizli moda geçiş" kuralına dahil olması için kaç kare
-     * okunabilmiş olması gerekiyor.
-     *
-     * Kural şu: ÖNCE okunabilen, SONRA ekranı gizleyen bir uygulama bilinçli
-     * olarak gizli moda geçmiştir (Reddit anonim mod, Telegram gizli sohbet).
-     * Hiç okunamamış bir uygulama ise baştan sona korumalıdır — bankacılık,
-     * şifre yöneticisi — ve asla bloklanmamalı.
-     *
-     * Bu eşik açılış ekranı filtresi: bazı bankaların splash ekranı bir iki
-     * kare okunabiliyor, ardından uygulama korumaya geçiyor. Eşik olmasaydı
-     * o bankalar "geçiş yaptı" sayılıp yanlış bloklanırdı. 1 fps'te 8 kare
-     * ≈ 8 saniye gerçek kullanım demek; hiçbir splash ekranı o kadar sürmez.
-     */
-    const val SECURE_WARMUP_FRAMES = 8
+    const val BLIND_TICKS_REQUIRED = 8
 }
-
-/**
- * Erişilebilirlik katmanı için URL anahtar kelimeleri.
- *
- * Bu bilinçli olarak KISA tutuldu. Amaç kapsamlı bir blocklist değil —
- * o savaşı kaybedersin, alan adı sonsuz. Amaç gizli sekme kör noktasında
- * en yaygın durumları yakalamak. Asıl iş görsel sınıflandırıcıda.
- */
-val Config.URL_KEYWORDS: List<String>
-    get() = listOf(
-        // alan adlari
-        "porn", "xvideo", "xnxx", "xham", "redtube", "youporn",
-        "spankbang", "chaturbate", "onlyfans", "rule34", "nhentai",
-        "hentai", "brazzers", "erome", "motherless",
-        // platform ici yollar — Reddit, 4chan gibi siteler tek alan adi
-        // altinda hem normal hem yetiskin icerik barindiriyor, o yuzden
-        // alan adi degil YOL bazli eslesme gerekiyor
-        "reddit.com/r/nsfw", "reddit.com/r/gonewild", "old.reddit.com/r/nsfw",
-        "4chan.org/b/", "4chan.org/s/", "4chan.org/hc/", "4chan.org/gif/",
-        "boards.4chan.org/b", "boards.4chan.org/s",
-        "/nsfw", "nsfw=true", "over18"
-    )
 
 // ---------------------------------------------------------------
 // HASSASİYET PROFİLLERİ
@@ -336,11 +309,23 @@ enum class Hassasiyet(
     val wSexy: Float,
     val soft: Float,
     val hard: Float,
-    val release: Float
+    val release: Float,
+    /**
+     * Metin analizinin blok eşiği (bkz. ContentAnalyzer).
+     *
+     * Görsel eşiklerden ayrı, çünkü iki skorun "0.7"si aynı şeyi ifade
+     * etmiyor: biri softmax çıktısı, diğeri kanıt birleşimi. Döngü metin
+     * skorunu bu eşik TAM OLARAK soft'a denk gelecek şekilde eşliyor.
+     *
+     * Ölçüm (tools/metin_sim.py): porno sayfaları 0.90+, bankacılık ve
+     * sağlık içerikleri 0.30 altında. Aradaki boşluk geniş; 0.78 boşluğun
+     * ortasında duruyor.
+     */
+    val textSoft: Float
 ) {
-    DENGELI(0.35f, 0.68f, 0.94f, 0.40f),
-    SIKI(0.85f, 0.55f, 0.90f, 0.32f),
-    KATI(1.00f, 0.50f, 0.88f, 0.28f);
+    DENGELI(0.35f, 0.68f, 0.94f, 0.40f, 0.78f),
+    SIKI(0.85f, 0.55f, 0.90f, 0.32f, 0.68f),
+    KATI(1.00f, 0.50f, 0.88f, 0.28f, 0.60f);
 
     companion object {
         /** Aktif profil. */

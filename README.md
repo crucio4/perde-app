@@ -1,34 +1,73 @@
 # Perde
 
-Android için cihaz üzerinde çalışan ekran içeriği filtresi. Database/blocklist yok — ekranı gerçek zamanlı sınıflandırır, eşik aşılınca tam ekran overlay bindirip ana ekrana atar.
+Android için cihaz üzerinde çalışan ekran içeriği filtresi. Site listesi yok —
+ekranı gerçek zamanlı analiz eder, eşik aşılınca tam ekran overlay bindirip
+ana ekrana atar.
 
-Hiçbir veri cihazdan çıkmaz. Tüm inference lokal (TFLite).
+Ekranı iki ayrı yoldan okur: **pikseli** (görsel sınıflandırma) ve
+**içeriği** (erişilebilirlik ağacındaki metin). Gizli sekme pikseli
+kapatıyor, içeriği kapatmıyor — kör nokta oradan kapanıyor.
 
-## Mimari
+Hiçbir veri cihazdan çıkmaz. Tüm analiz lokal.
+
+## Mimari — iki kanal
+
+Ekranı iki ayrı yoldan okuyoruz, çünkü Android ikisini birden kapatmıyor.
 
 ```
-ForegroundAppWatcher  ─ izlenen uygulama önde mi? (değilse yakalama kapalı → batarya)
+ForegroundAppWatcher  ─ izlenen uygulama önde mi? (değilse her şey kapalı → batarya)
         ↓
-ScreenCapturer        ─ MediaProjection + VirtualDisplay + ImageReader, 1 fps, 1/4 çözünürlük
-        ↓
-NsfwClassifier        ─ TFLite, 224x224, 5 sınıf çıktı
-        ↓
-DetectionEngine       ─ ağırlıklandırma → EMA → pencere oylama → histerezis → soğuma
+   ┌────────────────────────────┬────────────────────────────┐
+   │  KANAL 1 — PİKSEL          │  KANAL 2 — İÇERİK          │
+   │  takeScreenshot()          │  erişilebilirlik ağacı     │
+   │        ↓                   │        ↓                   │
+   │  NsfwClassifier (TFLite)   │  ScreenReader (metin)      │
+   │        ↓                   │        ↓                   │
+   │  ImageEvidence (ten/renk)  │  ContentAnalyzer           │
+   │                            │                            │
+   │  FLAG_SECURE'da KÖR        │  FLAG_SECURE'dan ETKİSİZ   │
+   └────────────────────────────┴────────────────────────────┘
+        ↓                                    ↓
+        └──────────► max(görsel, metin) ◄────┘
+                            ↓
+DetectionEngine       ─ EMA → pencere oylama → histerezis → soğuma
         ↓
 OverlayManager        ─ SYSTEM_ALERT_WINDOW overlay + HOME intent
 ```
 
+İki kanal da aynı ölçeğe eşlenip **aynı** karar motoruna giriyor. Yani gizli
+sekmede devreye giren yol, normal kullanımdakiyle aynı yanlış-pozitif
+katmanlarından geçiyor; ayrı kuralları, ayrı eşikleri yok.
+
 ## False positive katmanları
 
-Tek karelik yüksek skor **asla** bloklamaz (HARD eşiği hariç). Beş katman sırayla:
+Tek karelik yüksek skor **asla** bloklamaz — HARD eşiği bile iki ardışık kare istiyor. Altı katman sırayla:
 
 | Katman | Ne yapar | Neyi engeller |
 |---|---|---|
 | Sınıf ağırlığı | `sexy` sınıfı 0.35 ile çarpılır, `drawings` 0 | Plaj, spor, moda, tişörtsüz fotoğraf |
+| **Görsel kanıt** (`ImageEvidence`) | Ten/renk/düzlük ölçer, model iddiasını pikselle doğrular | **Çöp adam, diyagram, çizgi çizim, metin ekranı** |
 | EMA (α=0.45) | Skoru yumuşatır | Ani tek kare sıçraması |
 | Pencere oylama | Son 8 karenin 5'i ≥0.68 olmalı | Kaydırırken denk gelen kare, thumbnail, reklam |
 | Histerezis | Açılma 0.68, kapanma 0.40 | Bloğun açılıp kapanıp titremesi |
 | Soğuma | Blok kalktıktan 4s sonra yeniden tetiklenebilir | Flapping |
+
+### Çöp adam neden bloklamıştı
+
+Model stil ile içeriği ayıramıyor: çizgi çizimleri `drawings` ile `hentai`
+arasında bölüyor ve `hentai` ağırlığı 0.95 olduğu için basit bir çizim
+0.94'ü aşıp **tek karede** blok tetikleyebiliyordu.
+
+İki düzeltme:
+
+1. `ImageEvidence` — çıplaklık ten gerektirir. Kare 4×6 karoya bölünüp en
+   yoğun karonun ten oranı ölçülüyor; ten yoksa modelin iddiasını piksel
+   desteklemiyor demektir ve skor kırpılıyor. Çizgi çizim (akromatik
+   piksel oranı yüksek + renklilik düşük + ten yok) doğrudan sıfırlanıyor.
+2. `HARD_FRAMES_REQUIRED = 2` — hızlı yol artık iki ardışık kare istiyor.
+
+Bedeli, bilerek kabul edilen iki boşluk: siyah-beyaz fotoğraf (ten kroması
+yok, kural devre dışı bırakılıyor) ve çizgisel/siyah-beyaz manga.
 
 Simülasyon sonuçları (`sim.py` mantığıyla):
 
@@ -73,8 +112,9 @@ Android Studio → yeni proje aç → bu dosyaları kopyala. Kök `build.gradle.
 
 1. **Overlay** — uygulama içinden buton, Ayarlar'a atar
 2. **Kullanım erişimi** — Ayarlar > Özel erişim > Kullanım erişimi, manuel açman gerekiyor, runtime prompt yok
-3. **Ekran yakalama** — Başlat'a basınca sistem sorar, her yeniden başlatmada tekrar sorar (Android bunu bypass ettirmiyor)
-4. **Pil optimizasyonu dışına al** — yoksa sistem servisi öldürür. Ayarlar > Pil > Kısıtlanmamış
+3. **Erişilebilirlik** — Ayarlar > Erişilebilirlik > Perde. **Atlanabilir değil.** İki iş birden yapıyor: ekran görüntüsünü izin sormadan alıyor ve içerik kanalını besliyor. Kapalıysa gizli sekme kör nokta olarak kalır ve koruma süreç ölümünden sonra geri gelmez
+4. **Ekran yakalama** — yalnızca erişilebilirlik yolu çalışmıyorsa (API 30 altı) sorulur; her yeniden başlatmada tekrar sorar
+5. **Pil optimizasyonu dışına al** — yoksa sistem servisi öldürür. Ayarlar > Pil > Kısıtlanmamış
 
 ### 4. Kalibrasyon
 
@@ -91,9 +131,16 @@ Log.d("CAL", "raw=%.3f ema=%.3f pkg=%s".format(raw, decision.smoothedScore, pkg)
 
 Tek seferde tek parametre değiştir, yoksa neyin işe yaradığını göremezsin.
 
-### 5. İzlenen uygulama listesi
+### 5. İzlenen uygulama listesi — gerekmiyor
 
-`Config.WATCHED_PACKAGES` — kendi kullandığın tarayıcı/uygulamaların paket adlarını ekle. Listede olmayan uygulamalarda yakalama hiç çalışmaz, bu yüzden eksik bırakırsan boşluk kalır.
+Varsayılan mod `BLACKLIST`: `Config.EXCLUDED_PACKAGES` dışındaki her
+uygulama kapsanıyor. Liste bakımı yok, bilmediğin bir tarayıcı da kapsam
+içinde. `WATCHED_PACKAGES` yalnızca `monitorMode` elle `WHITELIST`
+yapılırsa kullanılıyor.
+
+Dışlama listesine bir şey eklemek isteyebileceğin tek durum: yanlış
+tetiklenmenin gerçekten zarar vereceği yerler (harita — araba
+kullanıyorsundur, kamera — acil bir an olabilir).
 
 ---
 
@@ -107,63 +154,145 @@ Tek seferde tek parametre değiştir, yoksa neyin işe yaradığını göremezsi
 
 ---
 
-## FLAG_SECURE kör noktası
+## FLAG_SECURE / gizli sekme
 
-Gizli sekme ve `FLAG_SECURE` kullanan uygulamalarda MediaProjection **tamamen siyah kare** döndürür. Bu bir hata değil, Android'in tasarımı: Google imzasız uygulamaların "secure" virtual display oluşturmasını baştan engelliyor. Root olmadan piksel seviyesinde çözümü **yok**.
+Gizli sekmede ve `FLAG_SECURE` kullanan uygulamalarda ekranın **pikseli**
+alınamaz: `takeScreenshot` `ERROR_TAKE_SCREENSHOT_SECURE_WINDOW` döner,
+MediaProjection siyah kare verir ya da hiç kare vermez. Bu bir hata değil,
+Android'in tasarımı ve root olmadan piksel seviyesinde çözümü **yok**.
 
-### Katmanlı yanıt
+**Ama piksel içerik değildir.**
 
-| Katman | FLAG_SECURE'dan etkilenir mi | Kapsam |
+FLAG_SECURE render edilmiş yüzeyi korur. Erişilebilirlik ağacı ayrı bir
+yapıdır ve o bayraktan etkilenmez. Gizli sekmede ekran görüntüsü siyah
+gelirken adres çubuğu, sayfa başlığı, başlıklar, bağlantı metinleri ve
+görsel alt metinleri okunmaya devam eder. Yani gizli sekmede "hiçbir şey
+göremiyoruz" doğru değil: **pikseli göremiyoruz, içeriği görüyoruz.**
+
+Uygulamanın gizli sekme yanıtı bu: piksel yerine içeriği okumak ve kararı
+okuduğu şeye göre vermek.
+
+### Eski yaklaşım neden bırakıldı
+
+Önceki sürüm "tarayıcıda ekranı göremiyorsam gizli sekmedir, blokla"
+diyordu. Bu bir tahmindi ve tahmin olduğu için etrafına sürekli yama
+gerekiyordu:
+
+- FLAG_SECURE'u meşru kullanan uygulamaları ayırmak için tarayıcı listesi
+- Reddit anonim mod / Telegram gizli sohbet için "önce okunabiliyordu,
+  sonra gizledi" davranış kuralı
+- O kuralın bankaların splash ekranında yanlış tetiklenmemesi için
+  ısınma sayacı
+- Ve hepsine rağmen Netflix oynatmaya basınca bloklanıyordu
+
+Hepsi silindi. Yerine tek cümlelik bir kural geldi: **kanıt varsa blok
+var, yoksa yok.** Bankacılık uygulaması da okunuyor; okunan şey bankacılık
+olduğu için skoru sıfır çıkıyor ve bloklanmıyor. Banka isimlerini bilmeye
+gerek yok, davranışını izlemeye de gerek yok.
+
+### İçerik analizi (`ContentAnalyzer.kt`)
+
+Bu bir anahtar kelime listesi kontrolü değil. Sözlükte **tek bir alan adı,
+tek bir marka adı yok** — alan adı sonsuzdur, o savaş kaybedilir. Sözlükte
+olan şey dil: bir sayfanın pornografik olduğunu söyleyen kelimeler. Sitenin
+adı ne olursa olsun sayfanın metni aynı kelimelerden kuruluyor, o yüzden
+hiç duyulmamış bir alan adı da yakalanıyor.
+
+Beş katman:
+
+| Katman | Ne yapar |
+|---|---|
+| **Normalizasyon** | `PORNO`, `pоrno` (Kiril o), `p0rn0`, `p o r n o`, `pornosu` → hepsi tek biçime iner. Türkçe karakter, aksan, Kiril/Yunan görsel ikizleri, leet, ayraçla parçalama |
+| **Kanıt birleşimi** | Terimler dört ağırlık sınıfında (güçlü / belirsiz / destek / **ters**). Noisy-OR ile birleşir; hiçbir tek terim tek başına 1.0'a ulaşamaz |
+| **Destek çarpanı** | Tek eşleşme karar veremez: 1 terim 0.49, 2 terim 0.74, 5 terim 0.96 katsayı alır. Sohbette geçen tek kelime bu yüzden bloklamıyor |
+| **Yoğunluk** | 100 kelimede kaç eşleşme. Ölçüldü: haber yazısı ~2, ansiklopedi maddesi ~9, porno sayfası **23-79**. Tek başına en ayırt edici sinyal |
+| **Ters kanıt** | Bankacılık, sağlık, eğitim, alışveriş, yazılım kelimeleri skoru aşağı çeker. Yoğunluk 20'yi aşınca devre dışı — porno sayfası "güvenli ödeme" yazarak bağışıklık kazanamasın |
+
+Metin skoru, `Hassasiyet.textSoft` eşiği tam olarak görsel `soft` eşiğine
+denk gelecek şekilde eşlenip aynı karar motoruna giriyor. Yani gizli
+sekmede de aynı pencere oylaması, aynı histerezis, aynı soğuma işliyor.
+
+### Ölçüm
+
+`python tools/metin_sim.py` — sözlüğü `Lexicon.kt`'den doğrudan okur, yani
+simülasyon uygulamadan sapamaz. 28 gerçekçi ekran metni örneği:
+
+```
+BLOKLANMASI GEREKENLER                          skor
+  porno tube (TR)                              1.000
+  porn tube (EN)                               1.000
+  gizli sekme, sadece adres + başlık           0.965
+  erotik hikaye sitesi (metin, görüntü yok)    1.000
+  obfuske arama ("p0rn", "p o r n o")          1.000
+  porno sayfası, İspanyolca (sözlükte yok)     0.958
+
+BLOKLANMAMASI GEREKENLER                        skor
+  bankacılık                                   0.000
+  şifre yöneticisi                             0.000
+  kadın doğum randevu uygulaması               0.000
+  YouTube / Netflix / Instagram / Tinder       0.000
+  küfürlü tweet                                0.000
+  cinsel sağlık makalesi                       0.078
+  haber: tecavüz davası                        0.049
+  biyoloji dersi: üreme sistemi                0.297
+  wikipedia: insan cinselliği                  0.318
+  sözlük maddesi: cinsellik                    0.371
+  porno bağımlılığıyla mücadele yazısı         0.453
+  iç giyim alışverişi                          0.143
+
+eşik (DENGELİ)                                 0.780
+en düşük doğru pozitif                         0.958
+en yüksek doğru negatif                        0.453
+boşluk                                         0.506
+```
+
+DENGELİ eşiğinde hata yok. SIKI (0.68) ve KATI (0.60) eşiklerinde de yok —
+aradaki boşluk yarım puandan geniş.
+
+### Bilinen boşluklar
+
+Ölçülen, kabul edilen, gizlenmeyen:
+
+| Boşluk | Neden | Ne kadar önemli |
 |---|---|---|
-| Görsel sınıflandırma | **Evet** — kör | İçerik bazlı, database yok |
-| Siyah kare tespiti | Hayır | "Göremiyorum" durumunu blok sinyali sayar |
-| Erişilebilirlik / URL | **Hayır** | Alan adı bazlı, gizli sekmede de çalışır |
-| Private DNS | **Hayır** | Sistem genelinde, tüm uygulamalar |
+| Metinsiz sayfa | Tek video sayfası, örtmeceli başlık ("Üvey abla ile - 1080p"), kelimesiz alan adı | O sayfaya bir liste sayfasından gelinir; liste sayfası zaten bloklanır. Gizli sekmede doğrudan adres girilirse kaçar |
+| Latin dışı alfabe | Sözlük Latin; Kiril/Arapça/CJK metin normalizasyonda düşüyor | Rusça/Arapça porno sayfası kaçar. İspanyolca/Almanca/Fransızca "porno" ortak kelime olduğu için yakalanıyor |
+| Erişilebilirlik kapalı | İçerik kanalı tamamen bu servise bağlı | Servis kapalıysa gizli sekme kör nokta olarak kalır. Tanı ekranında `erisilebilir KAPALI` yazar |
+| Salt görsel içerik | Sayfada gerçekten hiç metin yoksa | Nadir; sayfa başlığı bile genelde bir şey söyler |
 
-**Korumalı içerik tespiti** üç biçimde çalışıyor, çünkü kaynağa göre belirti değişiyor:
+Son çare olarak **"hiçbir şey okunamazsa engelle"** ayarı var (varsayılan
+kapalı, yalnızca tarayıcılarda, 8 tick kesintisiz sessizlikten sonra).
+DRM'li video oynatıcılar da bu duruma düştüğü için kapalı geliyor.
 
-| Biçim | Ne olur | Nerede görülür |
-|---|---|---|
-| Açık hata | `takeScreenshot` `ERROR_TAKE_SCREENSHOT_SECURE_WINDOW` döner | Erişilebilirlik yolu — kesin sinyal, 2 kare |
-| Hiç kare gelmez | VirtualDisplay üretmeyi bırakır | MediaProjection yolu, 6 tick |
-| Siyah kare | Kare gelir ama tüm pikseller 0 | `BlackFrameDetector`, 4 kare |
+### Gizlilik
 
-### "Göremiyorum" ne zaman blok sebebidir
+Okunan metin yalnızca bellekte tutuluyor, bir sonraki okumada üzerine
+yazılıyor. Diske yazılmıyor, loglanmıyor, cihazdan çıkmıyor. Tanı ekranı
+metni değil yalnızca sayıları gösteriyor (`s2 m1 d5 g0 yog12.4 tok80`).
+Koruma kapalıyken hiç okuma yapılmıyor.
 
-Burası kritik: FLAG_SECURE'u meşru kullanan çok uygulama var — bankacılık, şifre yöneticileri, DRM'li video, 2FA, MDM. Ayrım yapmadan "göremiyorum = blokla" demek bunların hepsini kullanılamaz hale getirir; bankanı açarsın, iki saniye sonra ana ekrana atılırsın.
+Erişilebilirlik servisi ekrandaki her metni okuyabilir — bu güçlü bir
+yetki. Sideload edilmiş, kaynağı elinde olan bir uygulamada veriyorsun;
+Play Store'dan kurulan bir uygulamaya vermeden önce iki kere düşün.
 
-Ayrım için **isim listesi tutulmuyor** — uygulamanın kendi davranışı ayırıyor. İki koşuldan biri sağlanmalı:
+### Private DNS (kod gerektirmez, ek kemer)
 
-| Koşul | Gerekçe | Örnek |
-|---|---|---|
-| Uygulama bir tarayıcı (`BROWSER_PACKAGES`) | Gizli sekme bir tarayıcı olgusu | Chrome gizli sekme |
-| Uygulama **önce okunabiliyordu, sonra gizlemeye başladı** | Bilinçli gizli mod geçişi | Reddit anonim mod, Telegram gizli sohbet |
+Ayarlar > Ağ > Özel DNS > sağlayıcı adı gir. Filtreleyen bir DoT sağlayıcı
+kullanırsan gizli sekme dahil sistemin tamamı kapsanır — DNS piksel
+görmüyor, FLAG_SECURE'ın etkisi yok.
 
-Hiç okunamamış bir uygulama baştan sona korumalıdır — bankacılık, şifre yöneticisi — ve **asla bloklanmaz**. Banka isimlerini bilmeye gerek yok.
+Sınırı: alan adı bazlı, IP'ye doğrudan gitmek veya VPN kurmak atlatır.
+Ayarı değiştirmek 10 saniye sürer, teknik kilit değil.
 
-`SECURE_WARMUP_FRAMES = 8` açılış ekranı filtresi: bazı bankaların splash ekranı bir iki kare okunabiliyor, sonra korumaya geçiyor. Eşik olmasaydı "geçiş yaptı" sayılıp yanlış bloklanırlardı. 1 fps'te 8 kare ≈ 8 saniye gerçek kullanım; hiçbir splash o kadar sürmez.
+### Root yolu (artık gerekli değil)
 
-**Bilinen yanlış tetiklenme:** DRM'li video. Netflix'in katalog ekranı okunabilir, oynatmaya basınca korumaya geçer — kural bunu gizli mod geçişi sanar. Şimdilik çözümü ayarı kapatmak; kalıcı çözüm uygulama bazlı muafiyet listesi.
+LSPosed üzerinde FLAG_SECURE'ı sistem genelinde devre dışı bırakan modüller
+var; pikseli gerçekten geri getiriyorlar. Bedeli: bootloader açma (cihaz
+sıfırlanır), root, Play Integrity kırılması — bankacılık uygulamaların ve
+bazı oyunlar çalışmaz.
 
-Uygulama içinden **"Gizli sekmeyi engelle"** ile tamamen kapatılabilir. Gizli sekmeyi normal işleri için kullanıyorsan kapat.
-
-Tanı ekranındaki `gizli kural` satırı o an hangi koşulun geçerli olduğunu gösterir: `tarayici`, `gecis izleniyor`, `muaf (3/8)` ya da `kapali`.
-
-**Erişilebilirlik katmanı** (`PerdeAccessibilityService.kt`): FLAG_SECURE render edilmiş yüzeyi korur, accessibility node tree'yi korumaz. Gizli sekmede ekran siyah gelirken adres çubuğu metni hâlâ okunabilir. Kurulum: Ayarlar > Erişilebilirlik > Perde.
-
-Bu katman alan adı bazlı — yani istemediğin blocklist mantığı. Ama kör noktayı root'suz kapatmanın tek yolu bu. `Config.URL_KEYWORDS` bilinçli olarak kısa: kapsamlı liste tutma savaşını kaybedersin, alan adı sonsuz. Asıl iş görsel sınıflandırıcıda kalıyor.
-
-### Private DNS (kod gerektirmez, en güçlü backstop)
-
-Ayarlar > Ağ > Özel DNS > sağlayıcı adı gir. Filtreleyen bir DoT sağlayıcı kullanırsan gizli sekme dahil sistemin tamamı kapsanır — FLAG_SECURE'ın hiçbir etkisi yok, çünkü DNS piksel görmüyor.
-
-Sınırı: alan adı bazlı, IP'ye doğrudan gitmek veya VPN kurmak atlatır. Ayarı değiştirmek 10 saniye sürer, teknik kilit değil.
-
-### Root yolu (gerçek çözüm, gerçek bedel)
-
-LSPosed üzerinde FLAG_SECURE'ı sistem genelinde devre dışı bırakan modüller var. Çalışır. Bedeli: bootloader açma (cihaz sıfırlanır), root, Play Integrity kırılması — bankacılık uygulamaların ve bazı oyunlar çalışmaz.
-
-Bu takası tamamen çözemeyeceğin bir kör nokta için yapmaya değer mi, kendi kararın. Üç katmanın birlikte kapsamı zaten pratikte yeterli.
+İçerik kanalı geldikten sonra bu takasın karşılığı kalmadı: root'un
+getireceği tek ek şey metinsiz sayfaların pikseli.
 
 ---
 
@@ -191,12 +320,17 @@ Kalın olanlar yanlış tetiklenme.
 
 Yani **"Instagram'ı yakala ama tatil fotoğrafımı bloklama" bu modelle mümkün değil.** Üçünden birini seçmen gerekiyor. Ayrımı istiyorsan tek yol kendi verinle fine-tune etmek, o da ayrı bir proje.
 
-### Model hiç göremediği şeyler
+### Görsel modelin göremedikleri — ve ikinci kanalın kapattıkları
 
-- **Metin.** Erotik hikâye, sohbet, altyazı — sınıflandırıcı görsel çalışıyor, metni okumuyor
-- **Ses.** Video sesi tamamen kapsam dışı
-- **Yakalanamayan uygulamalar.** `WATCHED_PACKAGES` listesinde olmayan hiçbir uygulamada çalışmaz. Liste eksikse boşluk kalır
-- **FLAG_SECURE ekranları.** Piksel görünmez; siyah kare tespiti "açıldığını" anlar, "ne olduğunu" değil
+| Görsel modelin körlüğü | İçerik kanalı ne yapıyor |
+|---|---|
+| **Metin.** Erotik hikâye, sohbet, altyazı — sınıflandırıcı piksel görüyor, okumuyor | **Kapatıyor.** Metin zaten onun tek girdisi. Ölçümde erotik hikâye sitesi 1.000 |
+| **FLAG_SECURE ekranları.** Piksel yok | **Kapatıyor.** Erişilebilirlik ağacı o bayraktan etkilenmiyor |
+| **Ses.** Video sesi | Kapsam dışı — ikisinde de |
+| **Metinsiz görsel sayfa** | Kapatamıyor; görsel kanal gerekiyor. İkisi de yoksa (gizli sekme + metinsiz sayfa) kaçıyor |
+
+`WATCHED_PACKAGES` artık varsayılan olarak devrede değil: mod `BLACKLIST`,
+yani dışlananlar hariç her uygulama kapsanıyor. Liste bakımı gerekmiyor.
 
 ## Batarya
 
@@ -205,8 +339,15 @@ Yani **"Instagram'ı yakala ama tatil fotoğrafımı bloklama" bu modelle mümk�
 | Katman | Kazanç |
 |---|---|
 | Uygulama kapısı | İzlenen uygulama önde değilse yakalama tamamen kapalı |
+| Ekran kapalıyken durma | `PowerManager.isInteractive` false ise hiçbir şey yapılmıyor |
 | **Kare farkı** (`FrameDiffer`) | Durağan ekranda inference ~%90 azalır |
 | Uyarlanabilir aralık | 20 kare sakin geçerse 1 fps → 0.33 fps |
+
+İçerik kanalının maliyeti ayrı: erişilebilirlik ağacı yürüyüşü uygulama
+sınırını aşan IPC demek. Üç bütçe birden sınırlıyor — en fazla 1400 düğüm,
+45 derinlik, 90 ms — ve iki okuma arasında en az 500 ms bekleniyor.
+Olay yağmuru (kaydırma sırasında saniyede onlarca olay) aynı kısıtlayıcıya
+girdiği için maliyet doğurmuyor.
 
 `FrameDiffer` en büyük kazanç. Gerçek kullanımda ekranın çoğu durağandır: metin okuyorsun, video duraklamış, uygulama açık ama etkileşim yok. O karelerde inference çalıştırmak saf israf, sonuç zaten aynı çıkacak. Kare 16x16 parmak izine indirilip öncekiyle karşılaştırılıyor, fark eşiğin altındaysa model hiç çalışmıyor.
 

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Perde</string>
-    <string name="a11y_desc">Reads the browser address bar to cover the private-tab blind spot. No data leaves your device.</string>
+    <string name="a11y_desc">Reads on-screen text so content can still be analyzed when the screen itself cannot be captured (private tabs). Text is kept in memory only — never stored, never sent anywhere.</string>
 
     <string name="perm_overlay">1. Grant overlay permission</string>
     <string name="perm_usage">2. Grant usage access</string>
@@ -13,8 +13,8 @@
     <string name="label_language">Language</string>
     <string name="label_sensitivity">Sensitivity</string>
     <string name="label_show_original">Show original scripture text</string>
-    <string name="label_block_secure">Block private browsing</string>
-    <string name="hint_block_secure">If the screen cannot be read in a browser, it is treated as a private tab and blocked. Browsers only — banking apps, password managers and DRM video are unaffected.</string>
+    <string name="label_block_secure">Last resort: block when nothing can be read</string>
+    <string name="hint_block_secure">Off by default. Private tabs are already covered by content analysis: the pixels are hidden but the text is not. Turn this on only if you also want a block when a browser exposes neither pixels nor text — DRM video players land here too.</string>
 
     <string name="profile_muslim">Muslim</string>
     <string name="profile_christian">Christian</string>

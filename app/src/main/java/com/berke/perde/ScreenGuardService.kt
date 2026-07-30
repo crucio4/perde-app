@@ -152,6 +152,13 @@ class ScreenGuardService : Service() {
         const val D_STARVED = "starved"
         const val D_WINDOW = "window"
         const val D_SOURCE = "source"
-        const val D_SECURE_RULE = "secure_rule"
+        /** Piksel kanalı neden kapalı: "korumalı pencere" / "siyah kare" / ... */
+        const val D_BLIND = "blind"
+        /** Ten/renk kanıtı özeti — çöp adam yanlış pozitifinin teşhisi. */
+        const val D_IMAGE = "image_ev"
+        /** İçerik analizi skoru (0..1). */
+        const val D_TEXT_RAW = "text_raw"
+        /** İçerik analizi özeti: kaç güçlü/belirsiz/destek/ters eşleşme. */
+        const val D_TEXT_INFO = "text_info"
     }
 }

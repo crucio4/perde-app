@@ -13,8 +13,13 @@ import android.util.Log
  *   4. Histerezis      — açılma ve kapanma eşikleri farklı, titremeyi önler
  *   5. Soğuma          — blok kalktıktan sonra kısa süre yeniden tetiklenmez
  *
- * Tek bir yüksek kare bloklamaya yetmez (HARD eşiği hariç). Bu kasıtlı:
- * kaydırırken denk gelen tek kare, reklam, thumbnail vs. tetiklememeli.
+ * Tek bir yüksek kare bloklamaya ASLA yetmez — HARD eşiği bile iki ardışık
+ * kare istiyor. Bu kasıtlı: kaydırırken denk gelen tek kare, reklam,
+ * thumbnail ya da modelin tek karelik sapması tetiklememeli.
+ *
+ * Motor skorun NEREDEN geldiğini bilmiyor. Görsel sınıflandırıcı da metin
+ * analizi de aynı ölçeğe eşlenip buraya giriyor; böylece iki kanal da
+ * aynı yanlış-pozitif katmanlarından geçiyor.
  */
 class DetectionEngine {
 
@@ -34,6 +39,9 @@ class DetectionEngine {
     private var consecutiveClearFrames = 0
     private var blockStartedAt = 0L
     private var cooldownUntil = 0L
+
+    /** HARD eşiğini üst üste kaç kare geçti. */
+    private var hardStreak = 0
 
     /**
      * Model çıktısını ağırlıklı tek skora indirger.
@@ -67,15 +75,23 @@ class DetectionEngine {
         if (window.size >= Config.WINDOW_SIZE) window.removeFirst()
         window.addLast(ema)
 
+        if (ema >= Hassasiyet.aktif.hard) hardStreak++ else hardStreak = 0
+
         val previousState = state
 
         when (state) {
             State.CLEAR -> {
                 val inCooldown = now < cooldownUntil
 
-                // HARD: tek kare, tartışmasız durum. Soğuma bunu da bağlar,
-                // yoksa blok kalkar kalkmaz aynı kare tekrar tetikler.
-                val hardHit = ema >= Hassasiyet.aktif.hard
+                // HARD: tartışmasız durum, pencere oylamasını atlar.
+                //
+                // Eskiden TEK kare yetiyordu ve "anında blok" buradan
+                // geliyordu: model bir çöp adam çizimini 0.99 hentai
+                // sayınca ekran o saniye kapanıyordu. Tek karelik bir
+                // model çıktısı hiçbir zaman bu kadar güvenilir değil.
+                // İki ardışık kare ~1.2 saniye demek; hızlı yol duruyor,
+                // tek karelik sapmalar eleniyor.
+                val hardHit = hardStreak >= Config.HARD_FRAMES_REQUIRED
 
                 // SOFT: pencere oylaması
                 val hits = window.count { it >= Hassasiyet.aktif.soft }
@@ -109,6 +125,7 @@ class DetectionEngine {
                     window.clear()
                     emaInitialized = false
                     ema = 0f
+                    hardStreak = 0
                     Log.i(TAG, "TEMIZ -> soğuma ${Config.COOLDOWN_MS}ms")
                 }
             }
@@ -130,6 +147,7 @@ class DetectionEngine {
         state = State.CLEAR
         consecutiveClearFrames = 0
         blockStartedAt = 0L
+        hardStreak = 0
         // cooldownUntil bilerek sıfırlanmıyor: uygulama değiştirip
         // hemen geri gelerek soğumayı atlamayı engeller.
     }

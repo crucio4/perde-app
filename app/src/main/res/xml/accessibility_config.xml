@@ -1,8 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  packageNames verilmiyor: bilerek. Kapsam paket adına göre değil,
+  ekranda ne yazdığına göre belirleniyor (bkz. ContentAnalyzer).
+  Liste tutmak, listede olmayan uygulamayı kör nokta yapar.
+
+  flagIncludeNotImportantViews: erişilebilirlik için "önemsiz" işaretlenmiş
+  düğümler de okunur. Tarayıcıların web içeriğinde ve alışılmadık
+  arayüzlerde metnin önemli bir kısmı orada duruyor.
+
+  typeViewScrolled: sonsuz kaydırmalı sayfalarda içerik değişiminin tek
+  haber verildiği olay bu.
+-->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
-    android:accessibilityEventTypes="typeWindowContentChanged|typeWindowStateChanged|typeViewTextChanged"
+    android:accessibilityEventTypes="typeWindowContentChanged|typeWindowStateChanged|typeViewTextChanged|typeViewScrolled"
     android:accessibilityFeedbackType="feedbackGeneric"
-    android:accessibilityFlags="flagReportViewIds|flagRetrieveInteractiveWindows"
+    android:accessibilityFlags="flagReportViewIds|flagRetrieveInteractiveWindows|flagIncludeNotImportantViews"
     android:canRetrieveWindowContent="true"
     android:canTakeScreenshot="true"
     android:notificationTimeout="300"

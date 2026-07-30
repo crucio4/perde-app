@@ -252,15 +252,37 @@ class MainActivity : AppCompatActivity() {
             append("koruma       ").append(if (Guard.isEnabled(this@MainActivity)) "ACIK" else "kapali")
             append('\n')
             append("kaynak       ").append(d.getString(ScreenGuardService.D_SOURCE, "-")).append('\n')
-            append("gizli kural  ")
-                .append(d.getString(ScreenGuardService.D_SECURE_RULE, "-")).append('\n')
+            val a11yOn = PerdeAccessibilityService.instance != null
+            append("erisilebilir ").append(if (a11yOn) "OK" else "KAPALI").append('\n')
             append("aktif profil ").append(d.getString(ScreenGuardService.D_SENS, "-")).append('\n')
             append("son paket    ").append(d.getString(ScreenGuardService.D_LAST_PKG, "-")).append('\n')
             append("analiz kare  ").append(d.getInt(ScreenGuardService.D_FRAMES, 0)).append('\n')
             append("pencere      ").append(d.getString(ScreenGuardService.D_WINDOW, "-")).append('\n')
-            append("kare yok     ").append(d.getInt(ScreenGuardService.D_STARVED, 0))
+
+            // --- Kanal 1: piksel ---
+            append("\npiksel kanali\n")
+            append("  durum      ")
+                .append(d.getString(ScreenGuardService.D_BLIND, "-").let {
+                    if (it == "-") "acik" else "KOR: $it"
+                }).append('\n')
+            append("  ten/renk   ")
+                .append(d.getString(ScreenGuardService.D_IMAGE, "-")).append('\n')
+
+            // --- Kanal 2: icerik ---
+            // Gizli sekmede tek calisan kanal bu. Skor 0 ve "okuma yok"
+            // goruyorsan erisilebilirlik servisi kapali demektir.
+            append("icerik kanali\n")
+            append("  skor       ")
+                .append("%.2f".format(d.getFloat(ScreenGuardService.D_TEXT_RAW, 0f)))
+                .append("  esik ").append(h.textSoft).append('\n')
+            append("  okuma      ")
+                .append(d.getString(ScreenGuardService.D_TEXT_INFO, "-")).append('\n')
+            // Kor VE sessiz gecen ardisik tick. "Son care" ayarinin
+            // hangi noktada oldugunu gosteren tek sayi.
+            append("  sessiz     ").append(d.getInt(ScreenGuardService.D_STARVED, 0))
                 .append(" tick\n")
-            append("son skor     ")
+
+            append("\nson skor     ")
                 .append("%.3f".format(d.getFloat(ScreenGuardService.D_LAST_RAW, 0f)))
                 .append("   ema ")
                 .append("%.3f".format(d.getFloat(ScreenGuardService.D_LAST_EMA, 0f)))

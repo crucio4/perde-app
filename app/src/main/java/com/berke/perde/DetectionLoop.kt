@@ -4,19 +4,31 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.os.Handler
 import android.os.HandlerThread
+import android.os.SystemClock
 import android.util.Log
 
 /**
- * Tespit dongusu. Eskiden ScreenGuardService'in icindeydi; iki ayri
- * kare kaynagi (MediaProjection ve erisilebilirlik) ayni mantigi
- * kullanabilsin diye buraya alindi.
+ * Tespit döngüsü — İKİ KANAL.
  *
- *   ondeki uygulama izleniyor mu?
- *     hayir -> yakalamayi durdur, uyu (batarya)
- *     evet  -> kare al -> siniflandir -> DetectionEngine -> blokla/kaldir
+ *   ┌─ PİKSEL  : kare al -> NsfwClassifier -> ImageEvidence ile doğrula
+ *   │            FLAG_SECURE'da körleşir.
+ *   └─ İÇERİK  : erişilebilirlik ağacından metin -> ContentAnalyzer
+ *                FLAG_SECURE'dan ETKİLENMEZ.
  *
- * @param sourceFactory kaynak, dongunun kendi worker Handler'ini
- *        kullanabilsin diye fabrika olarak aliniyor
+ * İkisi de aynı ölçeğe eşlenip tek bir DetectionEngine'e giriyor; yani
+ * yanlış-pozitif katmanları (EMA, pencere oylaması, histerezis, soğuma)
+ * her iki kanal için de aynen işliyor.
+ *
+ * GİZLİ SEKME BURADA ÇÖZÜLÜYOR. Eski yaklaşım "tarayıcıda ekranı
+ * göremiyorsam gizli sekmedir, blokla" idi — bu bir tahmindi ve
+ * bankacılık/DRM gibi meşru FLAG_SECURE kullanıcılarını ayırmak için
+ * isim listesine ya da davranış tahminine muhtaçtı. Artık gerek yok:
+ * ekranı göremesek de OKUYABİLİYORUZ, kararı okuduğumuz şey veriyor.
+ * Bankacılık uygulaması da okunuyor; okunan şey bankacılık olduğu için
+ * skoru sıfır çıkıyor ve bloklanmıyor.
+ *
+ * @param sourceFactory kaynak, döngünün kendi worker Handler'ını
+ *        kullanabilsin diye fabrika olarak alınıyor
  */
 class DetectionLoop(
     private val ctx: Context,
@@ -34,6 +46,8 @@ class DetectionLoop(
     private val engine = DetectionEngine()
     private val differ = FrameDiffer()
     private val blackDetector = BlackFrameDetector()
+    private val imageEvidence = ImageEvidence()
+    private val analyzer = ContentAnalyzer()
 
     private val diag = ctx.getSharedPreferences(
         ScreenGuardService.DIAG_PREFS, Context.MODE_PRIVATE
@@ -44,32 +58,18 @@ class DetectionLoop(
     private var lastWatchedPackage: String? = null
     private var lastLoggedPackage: String? = "<baslangic>"
     private var lastProbs: FloatArray? = null
-    private var secureBlackStreak = 0
-    private var secureErrorStreak = 0
-    private var starvedTicks = 0
+    private var lastEvidence = 1f
+    private var lastImageLabel = "-"
+    /** Kac ardisik tick'tir piksel kanali kor. Yalnizca tani icin. */
+    private var korTicks = 0
     private var calmFrames = 0
     private var currentInterval = Adaptive.FAST_INTERVAL_MS
 
     private var analyzedFrames = 0
     private var maxRaw = 0f
 
-    /** Bu uygulamada bu oturumda kaç kare okunabildi. Paket değişince sıfırlanır. */
-    private var readableFrames = 0
-
-    /**
-     * Bir kez "yeterince okunabilir" olmuş paketler.
-     *
-     * Bu kümedeki bir paket sonradan ekranı gizlemeye başlarsa, bu bilinçli
-     * bir gizli moda geçiştir → bloklanır (Reddit anonim mod, Telegram gizli
-     * sohbet). Kümeye hiç girmemiş paketler baştan sona korumalıdır
-     * (bankacılık, şifre yöneticisi) → asla bloklanmaz.
-     *
-     * Bilerek bellekte, kalıcıya yazılmıyor: yanlışlıkla kümeye girmiş bir
-     * uygulama sonsuza kadar orada kalmasın. Yeniden kurulan döngüde
-     * uygulamanın birkaç saniye normal kullanılması kuralı zaten yeniden
-     * hazırlıyor.
-     */
-    private val gecisAdaylari = mutableSetOf<String>()
+    /** Kör olduğumuz VE hiç metin de okuyamadığımız ardışık tick sayısı. */
+    private var blindMuteTicks = 0
 
     /** Blok ekranı ne zaman açıldı. Zorunlu kalkma süresini ölçmek için. */
     private var overlayShownAt = 0L
@@ -108,6 +108,7 @@ class DetectionLoop(
         overlay.hide()
         source.stop()
         classifier.close()
+        ScreenReader.clear()
         thread.quitSafely()
         Log.i(TAG, "Döngü durdu")
     }
@@ -131,9 +132,9 @@ class DetectionLoop(
         engine.reset()
         differ.reset()
         lastProbs = null
-        secureBlackStreak = 0
-        secureErrorStreak = 0
-        starvedTicks = 0
+        lastEvidence = 1f
+        korTicks = 0
+        blindMuteTicks = 0
 
         // Blok boyunca tick() en başta dönüyordu, yani kaynağa 8 saniye hiç
         // dokunulmadı. O aradan sonra kaynağı kaldığı yerden sürdürmek
@@ -166,19 +167,12 @@ class DetectionLoop(
 
         // --- Ekran kapalıyken hiçbir şey yapma ---
         // Kapalı ekranda takeScreenshot ya hata veriyor ya siyah kare
-        // döndürüyor. "Gizli moda geçiş" kuralı bunu okunabiliyordu-artık
-        // gizleniyor diye yorumlayıp blok basıyordu: kullanıcı telefonu
-        // bıraktığında ana ekran (okunabilir olduğu için geçiş adayı kümesine
-        // girmişti) her uyku-uyanma çevriminde tetikleniyor, 15-20 saniyede
-        // bir blok geliyordu. Ekranın kapanması gizli mod geçişi değildir.
-        //
-        // Ayrıca bu, bakılmayan bir ekranı analiz etmeyi de bitiriyor —
-        // bataryada doğrudan kazanç.
+        // döndürüyor; bakılmayan bir ekranı analiz etmenin de anlamı yok.
         if (!power.isInteractive) {
-            secureErrorStreak = 0
-            secureBlackStreak = 0
-            starvedTicks = 0
+            korTicks = 0
+            blindMuteTicks = 0
             lastGoodFrameAt = 0L
+            ScreenReader.clear()
             return
         }
 
@@ -199,10 +193,11 @@ class DetectionLoop(
                 engine.reset()
                 differ.reset()
                 lastProbs = null
-                starvedTicks = 0
-                secureBlackStreak = 0
-                secureErrorStreak = 0
+                lastEvidence = 1f
+                korTicks = 0
+                blindMuteTicks = 0
                 lastGoodFrameAt = 0L
+                ScreenReader.clear()
             }
             lastWatchedPackage = null
             return
@@ -213,12 +208,26 @@ class DetectionLoop(
             lastWatchedPackage = pkg
             maxRaw = 0f
             analyzedFrames = 0
-            // Isınma sayacı uygulama başına: yeni uygulamada sıfırdan başla,
-            // yoksa bir uygulamada biriken okunabilirlik diğerine taşınır.
-            readableFrames = 0
+            blindMuteTicks = 0
         }
 
         if (!source.isRunning() && !source.start()) return
+
+        // ==============================================================
+        // KANAL 2 — İÇERİK
+        // Piksel kanalından ÖNCE ve ondan bağımsız. Kare gelsin gelmesin
+        // her tick'te çalışıyor: gizli sekmede tek kanal bu.
+        // ==============================================================
+        ScreenReader.requestRefresh()
+        val content = ScreenReader.latest
+        val contentFresh = content.pkg.isNotEmpty() && content.pkg == pkg &&
+                SystemClock.uptimeMillis() - content.at <= Config.CONTENT_STALE_MS
+        val textVerdict = if (contentFresh && !content.isEmpty) {
+            analyzer.analyze(content)
+        } else {
+            ContentAnalyzer.Verdict.NONE
+        }
+        val textComponent = mapTextScore(textVerdict.score)
 
         // --- Gözcü ---
         // Kaynak açık ama kare akmıyorsa boru hattı takılmıştır. Asenkron
@@ -226,8 +235,7 @@ class DetectionLoop(
         // bayatlar, pencere geçişinde istek kaybolur); her birini ayrı
         // kovalamak yerine kaynağı baştan kuruyoruz.
         //
-        // Korumalı içerikte kare gelmemesi normaldir, orada gözcü susmalı —
-        // yoksa bankacılık uygulamasındayken boşuna durdurup başlatır.
+        // Korumalı içerikte kare gelmemesi normaldir, orada gözcü susmalı.
         if (!source.isSecureBlocked() && lastGoodFrameAt != 0L &&
             System.currentTimeMillis() - lastGoodFrameAt > Config.SOURCE_WATCHDOG_MS
         ) {
@@ -236,124 +244,85 @@ class DetectionLoop(
             source.start()
             differ.reset()
             lastProbs = null
+            lastEvidence = 1f
             lastGoodFrameAt = 0L
             return
         }
 
-        // "Göremiyorum" durumu iki halde blok sebebi sayılır:
-        //
-        //   1. Uygulama bir tarayıcı  -> gizli sekme
-        //   2. Uygulama daha önce okunabiliyordu, sonra gizlemeye başladı
-        //      -> bilinçli gizli mod geçişi (Reddit anonim, Telegram gizli)
-        //
-        // Bunun dışında kalan her şey — bankacılık, şifre yöneticisi, MDM,
-        // 2FA — baştan sona korumalıdır, hiç okunamamıştır, dolayısıyla
-        // kümeye hiç girmez ve asla bloklanmaz. Ayrım için isim listesi
-        // tutmaya gerek yok: uygulamanın kendi davranışı ayırıyor.
-        val gecisYapti = pkg != null && pkg in gecisAdaylari
-        val korumaliBlokla = SecurePolicy.blockOnSecure &&
-                (Config.isBrowser(pkg) || gecisYapti)
-
-        // Tanı etiketi: "bankam neden bloklanmadı / gizli sekme neden
-        // bloklandı" sorusunun cevabı. Üç dalda da yazılıyor, yoksa hiç
-        // okunamayan bir uygulamada ekranda önceki uygulamadan kalan
-        // değer görünür ve yanıltır.
-        val kuralEtiketi = when {
-            !SecurePolicy.blockOnSecure -> "kapali"
-            Config.isBrowser(pkg) -> "tarayici"
-            gecisYapti -> "gecis izleniyor"
-            else -> "muaf ($readableFrames/${SecurePolicy.SECURE_WARMUP_FRAMES})"
-        }
-
+        // ==============================================================
+        // KANAL 1 — PİKSEL
+        // ==============================================================
         // SIRA KRİTİK: grabFrame() aynı zamanda bir sonraki ekran görüntüsü
-        // isteğini başlatan pompadır. Eskiden isSecureBlocked() kontrolü
-        // bunun ÜSTÜNDEYDİ ve doğru çıkınca return ediyordu — yani tek bir
-        // başarısız istek kalıcı "korumalı" durumuna kilitliyordu: bir daha
-        // hiç istek gönderilmiyor, durum hiç güncellenmiyor, tespit sessizce
-        // ölüyordu. Pompa artık her tick'te koşulsuz çalışıyor.
+        // isteğini başlatan pompadır, koşulsuz çalışmalı. Eskiden korumalı
+        // durum kontrolü bunun üstündeydi ve tek bir başarısız istek
+        // yakalamayı kalıcı olarak öldürüyordu.
         //
         // NOT: dönen Bitmap kaynağa ait, burada recycle EDİLMEZ.
         val frame: Bitmap? = source.grabFrame()
 
-        // --- FLAG_SECURE, 1. biçim: kaynak açıkça "göremiyorum" diyor ---
-        // takeScreenshot ERROR_TAKE_SCREENSHOT_SECURE_WINDOW döndürüyor.
-        // Bu tahmin değil kesin bilgi, o yüzden eşik düşük tutuldu.
-        if (source.isSecureBlocked()) {
-            secureErrorStreak++
-            if (korumaliBlokla &&
-                secureErrorStreak >= SecurePolicy.SECURE_ERROR_FRAMES_REQUIRED &&
-                !overlay.isShowing()
-            ) {
-                blokla("korumalı içerik, kesin sinyal ($secureErrorStreak)")
-            }
-            diag.edit()
-                .putInt(ScreenGuardService.D_STARVED, secureErrorStreak)
-                .putString(ScreenGuardService.D_SECURE_RULE, kuralEtiketi)
-                .putString(ScreenGuardService.D_LAST_PKG, pkg ?: "-")
-                .apply()
-            return
+        // Körlüğün üç biçimi. Hiçbiri tek başına blok sebebi DEĞİL —
+        // yalnızca "piksel kanalı kapalı" demek. Ayrı ayrı isimleri var
+        // çünkü tanı ekranında hangisi olduğunu görmek gerekiyor:
+        // korumalı pencere gizli sekmedir, kare yok boru hattı takılmasıdır.
+        val black = frame != null && blackDetector.analyze(frame).isSecureBlack
+        val korBicim: String? = when {
+            source.isSecureBlocked() -> "korumalı pencere"
+            frame == null -> "kare yok"
+            black -> "siyah kare"
+            else -> null
         }
-        secureErrorStreak = 0
-
-        // --- FLAG_SECURE, 2. biçim: hiç kare gelmiyor ---
-        // MediaProjection gizli sekmede siyah kare değil, HİÇ kare üretmiyor.
-        if (frame == null) {
-            starvedTicks++
-            if (korumaliBlokla &&
-                starvedTicks >= SecurePolicy.SECURE_STARVED_TICKS_REQUIRED &&
-                !overlay.isShowing()
-            ) {
-                blokla("hiç kare gelmiyor ($starvedTicks tick)")
-            }
-            diag.edit()
-                .putInt(ScreenGuardService.D_STARVED, starvedTicks)
-                .putString(ScreenGuardService.D_SECURE_RULE, kuralEtiketi)
-                .putString(ScreenGuardService.D_LAST_PKG, pkg ?: "-")
-                .apply()
-            return
-        }
-        starvedTicks = 0
-
-        // --- FLAG_SECURE, 3. biçim: kare siyah geliyor ---
-        val black = blackDetector.analyze(frame)
-        if (black.isSecureBlack) {
-            secureBlackStreak++
-            if (korumaliBlokla &&
-                secureBlackStreak >= SecurePolicy.SECURE_BLACK_FRAMES_REQUIRED &&
-                !overlay.isShowing()
-            ) {
-                blokla("FLAG_SECURE siyah kare ($secureBlackStreak)")
-            }
-            return
-        }
-        secureBlackStreak = 0
-        lastGoodFrameAt = System.currentTimeMillis()
-
-        // Buraya ulaştıysak kare gerçekten okunabildi (null değil, siyah değil).
-        // Isınma eşiğini geçen uygulama "geçiş adayı" oluyor: bundan sonra
-        // ekranını gizlemeye başlarsa bu bilinçli bir gizli mod geçişidir.
-        readableFrames++
-        if (pkg != null && readableFrames >= SecurePolicy.SECURE_WARMUP_FRAMES) {
-            if (gecisAdaylari.add(pkg)) {
-                Log.d(TAG, "$pkg okunabilir olarak işaretlendi ($readableFrames kare)")
-            }
-        }
-
-        if (overlay.isShowing() && engine.currentState() == DetectionEngine.State.CLEAR) {
-            overlay.hide()
-        }
-
-        // --- Kare farkı: ekran değişmediyse inference'i atla ---
-        val diff = differ.check(frame)
-        val probs: FloatArray? = if (!diff.changed && lastProbs != null) {
-            lastProbs
+        if (korBicim == null) {
+            korTicks = 0
+            lastGoodFrameAt = System.currentTimeMillis()
         } else {
-            classifier.classify(frame)?.also { lastProbs = it }
+            korTicks++
         }
-        if (probs == null) return
 
-        val raw = engine.weighScore(probs)
+        var visualComponent = 0f
+        var probs: FloatArray? = null
+
+        if (korBicim == null && frame != null) {
+            // --- Kare farkı: ekran değişmediyse inference'i atla ---
+            val diff = differ.check(frame)
+            if (!diff.changed && lastProbs != null) {
+                probs = lastProbs
+            } else {
+                probs = classifier.classify(frame)?.also { lastProbs = it }
+                // Ten/renk kanıtı da kare başına: değişmeyen karede
+                // yeniden ölçmenin anlamı yok.
+                val stats = imageEvidence.analyze(frame)
+                lastEvidence = stats.multiplier()
+                lastImageLabel = stats.label()
+            }
+            if (probs != null) {
+                // Modelin iddiası pikselle destekleniyor mu? Çöp adam
+                // burada eleniyor: çizgi çizimde çarpan 0.
+                visualComponent = engine.weighScore(probs) * lastEvidence
+            }
+        }
+
+        // ==============================================================
+        // KARAR — iki kanalın güçlüsü
+        // ==============================================================
+        val raw = maxOf(visualComponent, textComponent)
         val decision = engine.update(raw, System.currentTimeMillis())
+
+        // --- Son çare: kör VE sessiz ---
+        // Ne piksel var ne metin. Varsayılan davranış BLOKLAMAMAK: bu
+        // durumda olan çok meşru uygulama var (DRM'li video, bazı
+        // bankacılık ekranları, 2FA). Ayarı açan kullanıcı tarayıcılarda
+        // bunu blok sebebi saymayı seçmiş oluyor.
+        val sessiz = !contentFresh || content.isEmpty
+        if (korBicim != null && sessiz) {
+            blindMuteTicks++
+            if (SecurePolicy.blockOnSecure && Config.isBrowser(pkg) &&
+                blindMuteTicks >= SecurePolicy.BLIND_TICKS_REQUIRED
+            ) {
+                blokla("kör ve sessiz ($blindMuteTicks tick, $korBicim)")
+            }
+        } else {
+            blindMuteTicks = 0
+        }
 
         // --- Tanı kaydı ---
         analyzedFrames++
@@ -365,21 +334,41 @@ class DetectionLoop(
             .putString(ScreenGuardService.D_SENS, Hassasiyet.aktif.name)
             .putString(ScreenGuardService.D_WINDOW, engine.windowStatus())
             .putString(ScreenGuardService.D_SOURCE, source.javaClass.simpleName)
-            .putInt(ScreenGuardService.D_STARVED, 0)
-            .putString(ScreenGuardService.D_SECURE_RULE, kuralEtiketi)
+            .putInt(ScreenGuardService.D_STARVED, blindMuteTicks)
+            .putString(
+                ScreenGuardService.D_BLIND,
+                if (korBicim == null) "-" else "$korBicim ($korTicks)"
+            )
+            .putString(ScreenGuardService.D_IMAGE, if (korBicim == null) lastImageLabel else "-")
+            .putFloat(ScreenGuardService.D_TEXT_RAW, textVerdict.score)
+            .putString(
+                ScreenGuardService.D_TEXT_INFO,
+                when {
+                    PerdeAccessibilityService.instance == null -> "a11y kapali"
+                    !contentFresh -> "okuma yok"
+                    content.isEmpty -> "metin yok (${content.nodes} dugum)"
+                    else -> textVerdict.label
+                }
+            )
         if (raw > maxRaw) {
             maxRaw = raw
             e.putFloat(ScreenGuardService.D_MAX_RAW, raw)
-                .putString(
+            probs?.let {
+                e.putString(
                     ScreenGuardService.D_MAX_PROBS,
-                    probs.joinToString(" ") { "%.2f".format(it) }
+                    it.joinToString(" ") { p -> "%.2f".format(p) }
                 )
+            }
         }
         e.apply()
 
         if (decision.justChanged) {
             when (decision.state) {
-                DetectionEngine.State.BLOCKED -> blokla("skor %.3f".format(raw))
+                DetectionEngine.State.BLOCKED -> blokla(
+                    if (textComponent >= visualComponent)
+                        "içerik %.2f (%s)".format(textVerdict.score, textVerdict.label)
+                    else "görüntü %.3f".format(raw)
+                )
                 DetectionEngine.State.CLEAR -> overlay.hide()
             }
         }
@@ -390,6 +379,27 @@ class DetectionLoop(
             currentInterval = if (calmFrames >= Adaptive.CALM_AFTER_FRAMES)
                 Adaptive.SLOW_INTERVAL_MS else Adaptive.FAST_INTERVAL_MS
         }
+    }
+
+    /**
+     * Metin skorunu görsel skorun ölçeğine eşler.
+     *
+     * İki kanalın "0.7" değeri aynı şeyi ifade etmiyor: biri softmax
+     * çıktısı, diğeri kanıt birleşimi. Eşleme, metin eşiğinin TAM OLARAK
+     * görsel SOFT eşiğine denk gelmesini sağlıyor — böylece metin kanalı
+     * da aynı pencere oylamasından geçiyor, kendi ayrı kuralına ihtiyaç
+     * duymuyor.
+     */
+    private fun mapTextScore(score: Float): Float {
+        if (score <= 0f) return 0f
+        val th = Hassasiyet.aktif.textSoft
+        val soft = Hassasiyet.aktif.soft
+        val mapped = if (score >= th) {
+            soft + (1f - soft) * ((score - th) / (1f - th))
+        } else {
+            soft * (score / th)
+        }
+        return mapped.coerceIn(0f, 1f)
     }
 
     companion object { private const val TAG = "DetectionLoop" }
