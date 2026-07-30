@@ -384,4 +384,25 @@ object Adaptive {
 
     /** Bu skorun altı "sakin" sayılır. */
     const val CALM_SCORE = 0.20f
+
+    /**
+     * Kare bu yaştan sonra kullanılmaz.
+     *
+     * SLOW_INTERVAL_MS'ten BÜYÜK olmak ZORUNDA, sabit bir sayı olamaz.
+     *
+     * Sebebi yakalamanın asenkron oluşu: grabFrame() önce yeni bir istek
+     * gönderiyor, sonra ELDEKİ kareyi döndürüyor — yani döndürülen kare
+     * her zaman bir tick yaşında. Sınır tick aralığının altında kalırsa
+     * sakin moda geçen döngü her kareyi "bayat" sayıp atar.
+     *
+     * Bu sessiz ve kalıcı bir arıza üretiyordu: 2500 ms sınır ile 3000 ms
+     * sakin aralık çeliştiği için piksel kanalı 20. sakin kareden sonra
+     * körleşiyor, kör kalmak skoru sıfır tuttuğu için döngü sakin moddan
+     * hiç çıkamıyor ve kanal bir daha geri gelmiyordu. Ekran görüntüsü
+     * başarıyla alınıyor, hata kodu dönmüyor, kare sadece çöpe gidiyordu —
+     * bu yüzden tanı ekranında "kare yok" görünüp sebep boş kalıyordu.
+     *
+     * Pay, tick gecikmesi ve ekran görüntüsünün kendi gecikmesi için.
+     */
+    const val FRAME_STALE_MS = SLOW_INTERVAL_MS + 1_500L
 }

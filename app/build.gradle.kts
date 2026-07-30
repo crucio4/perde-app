@@ -15,9 +15,42 @@ android {
         versionName = "1.0"
     }
 
+    /**
+     * Release imzalama.
+     *
+     * Anahtar bilgileri ortam degiskenlerinden okunuyor; repoda ne
+     * keystore ne parola duruyor. CI bunlari GitHub secret'larindan
+     * veriyor (bkz. .github/workflows/build.yml).
+     *
+     * NEDEN SABIT ANAHTAR SART: Android ayni paketi yalnizca ayni
+     * imzayla gunceller. Debug derlemede anahtar her makinede/her CI
+     * kosusunda yeniden uretiliyordu, yani yayinlanan her surum farkli
+     * imzaliydi ve kullanici guncelleme kuramiyordu — uygulamayi
+     * kaldirip butun ayarlarini, izinlerini ve 15 dakikalik gecikmesini
+     * sifirlamak zorunda kaliyordu. Bir bagimlilik uygulamasinda bu,
+     * korumanin tamamen kapali kaldigi bir pencere demek.
+     *
+     * Anahtar yoksa (yerel derleme, fork) release imzasiz uretilir;
+     * debug derleme her zaman calisir.
+     */
+    val keystorePath: String? = System.getenv("PERDE_KEYSTORE")
+    signingConfigs {
+        if (!keystorePath.isNullOrBlank()) {
+            create("release") {
+                storeFile = file(keystorePath)
+                storePassword = System.getenv("PERDE_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("PERDE_KEY_ALIAS")
+                keyPassword = System.getenv("PERDE_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            if (!keystorePath.isNullOrBlank()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 

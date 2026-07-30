@@ -85,7 +85,15 @@ class A11yCapturer(private val executor: Executor) : FrameSource {
         if (!running) return null
         request()
         val f = latest ?: return null
-        return if (System.currentTimeMillis() - latestAt <= STALE_AFTER_MS) f else null
+
+        // Bayatlik sessizce atlanmamali. Bu satirin isaretlenmemesi
+        // yuzunden piksel kanali sakin modda kalici olarak korlesiyordu ve
+        // tani ekrani sebep gostermedigi icin arama yakalama tarafinda
+        // gecti; oysa yakalama sorunsuz calisiyordu.
+        val yas = System.currentTimeMillis() - latestAt
+        if (yas <= Adaptive.FRAME_STALE_MS) return f
+        errorText = "kare bayat (${yas}ms)"
+        return null
     }
 
     private fun request() {
@@ -162,14 +170,25 @@ class A11yCapturer(private val executor: Executor) : FrameSource {
     private fun store(result: AccessibilityService.ScreenshotResult) {
         val buffer = result.hardwareBuffer
         try {
-            val wrapped = Bitmap.wrapHardwareBuffer(buffer, result.colorSpace) ?: return
+            // Bu iki donusum sessizce null donebiliyor. Isaretlenmezse
+            // sonuc "kare yok ama sebep yok" oluyor: takeScreenshot basarili,
+            // hata kodu yok, kare de ortada yok. Tani ekraninda bakan kisi
+            // yakalamanin calistigini sanip yanlis yerde arar.
+            val wrapped = Bitmap.wrapHardwareBuffer(buffer, result.colorSpace)
+            if (wrapped == null) {
+                errorText = "wrapHardwareBuffer null"
+                return
+            }
 
             // wrapHardwareBuffer HARDWARE config'li bitmap verir; ondan piksel
             // okunamaz ve yazilim canvas'ina cizilemez. Once yazilim kopyasi
             // sart, ardindan CAPTURE_DOWNSCALE ile kucultuyoruz.
             val soft = wrapped.copy(Bitmap.Config.ARGB_8888, false)
             wrapped.recycle()
-            if (soft == null) return
+            if (soft == null) {
+                errorText = "yazilim kopyasi null"
+                return
+            }
 
             val w = (soft.width / Config.CAPTURE_DOWNSCALE).coerceAtLeast(1)
             val h = (soft.height / Config.CAPTURE_DOWNSCALE).coerceAtLeast(1)
@@ -180,6 +199,7 @@ class A11yCapturer(private val executor: Executor) : FrameSource {
             latest = scaled
             latestAt = System.currentTimeMillis()
         } catch (e: Exception) {
+            errorText = "donusum: ${e.javaClass.simpleName}"
             Log.e(TAG, "Kare donusturulemedi: ${e.message}")
         } finally {
             runCatching { buffer.close() }
@@ -190,9 +210,6 @@ class A11yCapturer(private val executor: Executor) : FrameSource {
     // bu sinifi yuklemek API 30 tiplerine dokunuyor.
     companion object {
         private const val TAG = "A11yCapturer"
-
-        /** Bu yastan eski kare kullanilmaz. */
-        private const val STALE_AFTER_MS = 2_500L
 
         /** Bu sure gecince cevapsiz istek dusmus sayilir ve yenisi gonderilir. */
         private const val IN_FLIGHT_TIMEOUT_MS = 2_000L
