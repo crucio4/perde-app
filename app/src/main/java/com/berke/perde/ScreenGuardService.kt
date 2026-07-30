@@ -154,6 +154,14 @@ class ScreenGuardService : Service() {
         const val D_SOURCE = "source"
         /** Piksel kanalı neden kapalı: "korumalı pencere" / "siyah kare" / ... */
         const val D_BLIND = "blind"
+        /**
+         * Kaynağın son hata sebebi — "kare yok"un ARDINDAKİ sebep.
+         *
+         * D_BLIND yalnızca kare gelmediğini söylüyor; hata kodu logcat'e
+         * yazılıyordu ve bazı üreticiler üçüncü taraf loglarını bastırdığı
+         * için cihazda hiç okunamıyordu. Sebep artık burada.
+         */
+        const val D_SOURCE_ERR = "source_err"
         /** Ten/renk kanıtı özeti — çöp adam yanlış pozitifinin teşhisi. */
         const val D_IMAGE = "image_ev"
         /** İçerik analizi skoru (0..1). */

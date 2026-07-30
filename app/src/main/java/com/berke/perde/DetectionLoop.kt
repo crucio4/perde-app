@@ -80,6 +80,18 @@ class DetectionLoop(
     /** En son ne zaman kullanılabilir kare işlendi. Gözcü bunu izliyor. */
     private var lastGoodFrameAt = 0L
 
+    /**
+     * Kaynağın en son ne zaman kurulduğu.
+     *
+     * Gözcünün "hiç kare gelmedi" halini ölçebilmesi için şart: ilk kare
+     * hiç gelmezse lastGoodFrameAt sıfır kalıyor ve kıyaslanacak bir an
+     * olmuyordu.
+     */
+    private var sourceStartedAt = 0L
+
+    /** Peş peşe kaç kez kare alamadan yeniden kurduk. Geri çekilme için. */
+    private var sourceRebuilds = 0
+
     private val runnable = object : Runnable {
         override fun run() {
             try { tick() } catch (e: Exception) { Log.e(TAG, "tick hatası", e) }
@@ -211,7 +223,10 @@ class DetectionLoop(
             blindMuteTicks = 0
         }
 
-        if (!source.isRunning() && !source.start()) return
+        if (!source.isRunning()) {
+            if (!source.start()) return
+            sourceStartedAt = System.currentTimeMillis()
+        }
 
         // ==============================================================
         // KANAL 2 — İÇERİK
@@ -236,12 +251,22 @@ class DetectionLoop(
         // kovalamak yerine kaynağı baştan kuruyoruz.
         //
         // Korumalı içerikte kare gelmemesi normaldir, orada gözcü susmalı.
-        if (!source.isSecureBlocked() && lastGoodFrameAt != 0L &&
-            System.currentTimeMillis() - lastGoodFrameAt > Config.SOURCE_WATCHDOG_MS
-        ) {
-            Log.w(TAG, "Kaynak ${Config.SOURCE_WATCHDOG_MS}ms'dir kare vermiyor, yeniden kuruluyor")
+        //
+        // Referans an: son iyi kare, hiç gelmediyse kaynağın kurulduğu an.
+        // Eski koşul `lastGoodFrameAt != 0L` şartına bağlıydı, yani gözcü
+        // "çalışıyordu, durdu" halinden kurtarabiliyor ama "hiç çalışmadı"
+        // halinden kurtaramıyordu. İlk karesi hiç gelmeyen bir cihazda
+        // kurtarma mekanizması ömrü boyunca hiç tetiklenmiyordu.
+        val simdi = System.currentTimeMillis()
+        val referans = if (lastGoodFrameAt != 0L) lastGoodFrameAt else sourceStartedAt
+        val karesizSure = if (referans == 0L) 0L else simdi - referans
+
+        if (!source.isSecureBlocked() && karesizSure > gozcuAraligi()) {
+            sourceRebuilds++
+            Log.w(TAG, "Kaynak ${karesizSure}ms'dir kare vermiyor ($sourceRebuilds. kurulum), sebep=${source.lastError()}")
             source.stop()
             source.start()
+            sourceStartedAt = System.currentTimeMillis()
             differ.reset()
             lastProbs = null
             lastEvidence = 1f
@@ -274,6 +299,9 @@ class DetectionLoop(
         if (korBicim == null) {
             korTicks = 0
             lastGoodFrameAt = System.currentTimeMillis()
+            // Kaynak toparlandı; geri çekilme sayacı sıfırlanmalı, yoksa
+            // bir kez geri çekilen kaynak sonsuza kadar yavaş kalır.
+            sourceRebuilds = 0
         } else {
             korTicks++
         }
@@ -339,6 +367,13 @@ class DetectionLoop(
                 ScreenGuardService.D_BLIND,
                 if (korBicim == null) "-" else "$korBicim ($korTicks)"
             )
+            // "kare yok"un ardındaki sebep. Cihazda log okunamadığında
+            // piksel kanalının neden ölü olduğunu söyleyen tek satır bu.
+            .putString(
+                ScreenGuardService.D_SOURCE_ERR,
+                if (sourceRebuilds > 0) "${source.lastError()} · $sourceRebuilds kurulum"
+                else source.lastError()
+            )
             .putString(ScreenGuardService.D_IMAGE, if (korBicim == null) lastImageLabel else "-")
             .putFloat(ScreenGuardService.D_TEXT_RAW, textVerdict.score)
             .putString(
@@ -402,5 +437,27 @@ class DetectionLoop(
         return mapped.coerceIn(0f, 1f)
     }
 
-    companion object { private const val TAG = "DetectionLoop" }
+    /**
+     * Gözcünün bekleme süresi.
+     *
+     * Kaynak hiç kare vermiyorsa peş peşe yeniden kurmanın faydası yok:
+     * bazı cihazlarda takeScreenshot üçüncü taraf erişilebilirlik
+     * servislerine hiç izin vermiyor ve her 5 saniyede bir yeniden kurmak
+     * yalnızca pil yakıyor. Birkaç denemeden sonra aralık açılıyor —
+     * vazgeçmiyoruz, çünkü arıza geçici de olabilir. Metin kanalı bu
+     * sırada normal çalışmaya devam ediyor.
+     */
+    private fun gozcuAraligi(): Long =
+        if (sourceRebuilds >= REBUILD_BACKOFF_AFTER) SOURCE_RETRY_SLOW_MS
+        else Config.SOURCE_WATCHDOG_MS
+
+    companion object {
+        private const val TAG = "DetectionLoop"
+
+        /** Bu kadar sonuçsuz kurulumdan sonra gözcü seyrekleşir. */
+        private const val REBUILD_BACKOFF_AFTER = 3
+
+        /** Geri çekilmiş gözcü aralığı. */
+        private const val SOURCE_RETRY_SLOW_MS = 60_000L
+    }
 }

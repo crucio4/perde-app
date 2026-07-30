@@ -1,4 +1,4 @@
-package com.berke.perde
+﻿package com.berke.perde
 
 import android.accessibilityservice.AccessibilityService
 import android.graphics.Bitmap
@@ -18,7 +18,7 @@ import java.util.concurrent.Executor
  *   - Sistem cagrilari 333 ms araliga sinirliyor; Config.CAPTURE_FPS = 1.0
  *     oldugu icin sinira yaklasmiyoruz bile
  *
- * API asenkron, dongu senkron. Koprü: her grabFrame() cagrisi yeni bir
+ * API asenkron, dongu senkron. Köprü: her grabFrame() cagrisi yeni bir
  * istek baslatir ve EN SON tamamlanan kareyi dondurur. 1 fps'de bu bir
  * tick gecikme demek, kabul edilebilir.
  */
@@ -36,6 +36,16 @@ class A11yCapturer(private val executor: Executor) : FrameSource {
 
     /** Istegin gonderildigi an. Geri cagri kaybolursa kurtulmak icin. */
     @Volatile private var inFlightSince = 0L
+
+    /**
+     * Son basarisizligin insan okunur hali. Tani ekrani icin.
+     *
+     * Bu alan olmadan "kare yok" durumunun sebebi cihazda hic
+     * anlasilamiyor: hata kodu yalnizca logcat'e yaziliyordu ve bazi
+     * ureticiler ucuncu taraf uygulamalarin loglarini bastirdigi icin
+     * orasi bos kaliyor.
+     */
+    @Volatile private var errorText = "-"
 
     override fun start(): Boolean {
         if (running) return true
@@ -62,6 +72,8 @@ class A11yCapturer(private val executor: Executor) : FrameSource {
 
     override fun isSecureBlocked() = secureBlocked
 
+    override fun lastError() = errorText
+
     /**
      * @return YALNIZCA taze kare. takeScreenshot her cagrida guncel ekrani
      *         verdigi icin bayat kare tutmanin bir gerekcesi yok — dahasi
@@ -77,7 +89,11 @@ class A11yCapturer(private val executor: Executor) : FrameSource {
     }
 
     private fun request() {
-        val svc = PerdeAccessibilityService.instance ?: return
+        val svc = PerdeAccessibilityService.instance
+        if (svc == null) {
+            errorText = "servis yok"
+            return
+        }
 
         val now = System.currentTimeMillis()
         if (inFlight) {
@@ -85,6 +101,9 @@ class A11yCapturer(private val executor: Executor) : FrameSource {
             // dusurebiliyor. Zaman asimi olmasa bayrak sonsuza kadar true
             // kalir, bir daha hic istek gonderilmez ve yakalama sessizce olur.
             if (now - inFlightSince < IN_FLIGHT_TIMEOUT_MS) return
+            // Bu ayri bir ariza sinifi: istek sisteme ulasti ama ne onSuccess
+            // ne onFailure geldi. Hata kodu dondurenden bambaska bir sebep.
+            errorText = "cevap gelmedi"
             Log.w(TAG, "takeScreenshot geri cagrisi gelmedi, istek sifirlaniyor")
         }
         inFlight = true
@@ -98,6 +117,7 @@ class A11yCapturer(private val executor: Executor) : FrameSource {
                     override fun onSuccess(result: AccessibilityService.ScreenshotResult) {
                         inFlight = false
                         secureBlocked = false
+                        errorText = "-"
                         store(result)
                     }
 
@@ -107,14 +127,36 @@ class A11yCapturer(private val executor: Executor) : FrameSource {
                         // bilgi hic yoktu, sessizce hicbir sey olmuyordu.
                         secureBlocked =
                             errorCode == AccessibilityService.ERROR_TAKE_SCREENSHOT_SECURE_WINDOW
+                        errorText = errorName(errorCode)
                         Log.w(TAG, "takeScreenshot basarisiz: kod=$errorCode secure=$secureBlocked")
                     }
                 }
             )
         } catch (e: Exception) {
             inFlight = false
+            errorText = "cagrilamadi: ${e.javaClass.simpleName}"
             Log.e(TAG, "takeScreenshot cagrilamadi: ${e.message}")
         }
+    }
+
+    /**
+     * Hata kodunu okunur hale getirir.
+     *
+     * Kodun kendisi de yaziliyor: liste surumden surume genisliyor ve
+     * taninmayan bir kod "bilinmeyen(7)" olarak da olsa gorunmeli.
+     */
+    private fun errorName(code: Int): String = when (code) {
+        AccessibilityService.ERROR_TAKE_SCREENSHOT_INTERNAL_ERROR ->
+            "ic hata($code)"
+        AccessibilityService.ERROR_TAKE_SCREENSHOT_NO_ACCESSIBILITY_ACCESS ->
+            "erisim yok($code)"
+        AccessibilityService.ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT ->
+            "cok sik istek($code)"
+        AccessibilityService.ERROR_TAKE_SCREENSHOT_INVALID_DISPLAY ->
+            "gecersiz ekran($code)"
+        AccessibilityService.ERROR_TAKE_SCREENSHOT_SECURE_WINDOW ->
+            "korumali pencere($code)"
+        else -> "bilinmeyen($code)"
     }
 
     private fun store(result: AccessibilityService.ScreenshotResult) {

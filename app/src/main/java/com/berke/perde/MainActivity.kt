@@ -265,6 +265,11 @@ class MainActivity : AppCompatActivity() {
                 .append(d.getString(ScreenGuardService.D_BLIND, "-").let {
                     if (it == "-") "acik" else "KOR: $it"
                 }).append('\n')
+            // "kare yok" tek basina sebep soylemiyor; hata kodu burada.
+            // Logu okunamayan cihazlarda tek ipucu bu satir.
+            d.getString(ScreenGuardService.D_SOURCE_ERR, "-").let {
+                if (it != "-") append("  sebep      ").append(it).append('\n')
+            }
             append("  ten/renk   ")
                 .append(d.getString(ScreenGuardService.D_IMAGE, "-")).append('\n')
 

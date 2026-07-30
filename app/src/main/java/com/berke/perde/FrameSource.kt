@@ -45,4 +45,17 @@ interface FrameSource {
      * durgun ekran da olabilir. takeScreenshot ise kesin cevap verir.
      */
     fun isSecureBlocked(): Boolean
+
+    /**
+     * Kaynagin son basarisizlik sebebi, tani ekranina yazilmak icin.
+     *
+     * "kare yok" tek basina bir tesis degil: istegin hic gonderilemedigi,
+     * gonderilip hata dondugu ve gonderilip hic cevap gelmedigi durumlar
+     * bambaska sebeplere isaret ediyor ama disaridan ayni gorunuyor.
+     * Cihazda log okunamadiginda (bazi ureticiler ucuncu taraf loglarini
+     * bastiriyor) elimizde kalan tek ipucu bu alan.
+     *
+     * @return kisa aciklama, sorun yoksa "-"
+     */
+    fun lastError(): String = "-"
 }
