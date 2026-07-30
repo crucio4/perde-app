@@ -7,3 +7,13 @@ build/
 captures/
 .externalNativeBuild
 .cxx
+
+# Imzalama anahtari ASLA repoya girmemeli.
+# Bu anahtar uygulamanin kimligi: ona sahip olan senin adina
+# guncelleme yayinlayabilir. CI'da GitHub secret olarak duruyor
+# (PERDE_KEYSTORE_BASE64), diskte yerel kopya olarak.
+*.jks
+*.keystore
+*.p12
+keystore.properties
+perde-base64.txt
