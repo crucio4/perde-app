@@ -83,13 +83,13 @@ class PerdeAccessibilityService : AccessibilityService() {
 
     override fun onUnbind(intent: android.content.Intent?): Boolean {
         stopLoop()
-        instance = null
+        kaydiSil(this)
         return super.onUnbind(intent)
     }
 
     override fun onDestroy() {
         stopLoop()
-        instance = null
+        kaydiSil(this)
         super.onDestroy()
     }
 
@@ -103,6 +103,23 @@ class PerdeAccessibilityService : AccessibilityService() {
      */
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         event ?: return
+
+        // --- Kendini geri kaydetme ---
+        // Olay alıyorsak sistem bu örneği CANLI ve BAĞLI kabul ediyor
+        // demektir; o hâlde `instance` bizi göstermeli. Göstermiyorsa
+        // kaydımız silinmiştir ve bu, uygulamanın tamamen sessizleşmesi
+        // demek: hem ScreenReader hem A11yCapturer ilk satırda
+        // `instance ?: return` diyor. Döngü tık tık işlemeye devam
+        // ediyor ama iki gözü de kapalı.
+        //
+        // Buraya bir satır koymak, o duruma NASIL düşüldüğünden bağımsız
+        // olarak çıkışı garanti ediyor.
+        if (instance !== this) {
+            Log.w(TAG, "Servis kaydı kaybolmuş, geri alınıyor")
+            instance = this
+            if (Guard.isEnabled(this)) startLoop()
+        }
+
         // Koruma kapalıyken ekran OKUNMAZ. Gizlilik açısından kritik:
         // servis açık kalabilir, okuma yalnızca koruma açıkken olur.
         // (Döngü MediaProjection yolunda başka bir serviste yaşıyor,
@@ -133,5 +150,19 @@ class PerdeAccessibilityService : AccessibilityService() {
         @Volatile
         var instance: PerdeAccessibilityService? = null
             private set
+
+        /**
+         * Kaydı YALNIZCA hâlâ bizi gösteriyorsa siler.
+         *
+         * Kimlik kontrolü olmadan `instance = null` yazmak gerçek bir
+         * arızaydı: sistem servisi yeniden bağlarken yeni örneği eskisi
+         * yok edilmeden önce oluşturabiliyor. O sırada eski örneğin
+         * onDestroy'u, yeni ve sapasağlam örneğin kaydını siliyordu.
+         * Geriye çalışan bir servis ve onu göremeyen bir uygulama
+         * kalıyordu — koruma açık görünüyor, hiçbir şey tespit etmiyor.
+         */
+        private fun kaydiSil(who: PerdeAccessibilityService) {
+            if (instance === who) instance = null
+        }
     }
 }

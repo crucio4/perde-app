@@ -262,6 +262,22 @@ class MainActivity : AppCompatActivity() {
             if (hb == 0L) append("hic calismadi")
             else append(((System.currentTimeMillis() - hb) / 1000)).append(" sn once")
             append('\n')
+            append("son durum    ")
+                .append(d.getString(ScreenGuardService.D_STATE, "-")).append('\n')
+
+            // --- Ariza imzalari ---
+            // Bu iki satirdan biri sifirdan buyukse sorun tespit
+            // mantiginda DEGIL, servisin yasam dongusunde demektir.
+            val lost = d.getInt(ScreenGuardService.D_A11Y_LOST, 0)
+            if (lost > 0) append("A11Y KAYBI   ").append(lost).append(" tick\n")
+            val starts = d.getInt(ScreenGuardService.D_LOOP_STARTS, 0)
+            append("dongu kurulum").append(' ').append(starts)
+            val startedAt = d.getLong(ScreenGuardService.D_LOOP_STARTED_AT, 0L)
+            if (startedAt != 0L) {
+                append("  (son ")
+                    .append((System.currentTimeMillis() - startedAt) / 1000).append(" sn once)")
+            }
+            append('\n')
 
             val lastBlock = d.getLong(ScreenGuardService.D_LAST_BLOCK, 0L)
             if (lastBlock != 0L) {

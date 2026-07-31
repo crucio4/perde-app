@@ -98,6 +98,20 @@ class DetectionLoop(
     /** Son tick'in saati. [saglikli] bunu okuyor. */
     @Volatile private var sonTick = 0L
 
+    /** Erişilebilirlik kaydı kayıpken geçen toplam tick. Kalıcı sayaç. */
+    private var a11ysizTicks = 0
+
+    /**
+     * Son anlamlı tick'in ne yaptığı.
+     *
+     * Perde'nin KENDİ arayüzündeyken bilerek yazılmıyor: kullanıcı tanıya
+     * bakmak için uygulamayı açtığı anda son durumu ezerdi ve tam da
+     * öğrenmek istediğimiz bilgi kaybolurdu.
+     */
+    private fun durum(s: String) {
+        diag.edit().putString(ScreenGuardService.D_STATE, s).apply()
+    }
+
     private val runnable = object : Runnable {
         override fun run() {
             // catch Exception YETMİYORDU. OutOfMemoryError bir Error'dır,
@@ -125,9 +139,18 @@ class DetectionLoop(
         Hassasiyet.load(ctx)
         SecurePolicy.load(ctx)
 
+        // Kaçıncı kez kuruluyoruz? Tek bir oturumda bu sayı büyüyorsa
+        // servis (ya da süreç) yeniden yaratılıyor demektir — tespit
+        // mantığında aranacak bir şey kalmaz, sorun yaşam döngüsündedir.
+        val kurulum = diag.getInt(ScreenGuardService.D_LOOP_STARTS, 0) + 1
+        // Kayip sayaci dongu omruyle sifirlanmamali: arizanin bir kez
+        // yasandigi bilgisi, dongu yeniden kurulsa da durmali.
+        a11ysizTicks = diag.getInt(ScreenGuardService.D_A11Y_LOST, 0)
         diag.edit()
             .putBoolean(ScreenGuardService.D_MODEL_OK, classifier.isReady())
             .putString(ScreenGuardService.D_MODEL_ERR, classifier.lastError ?: "-")
+            .putInt(ScreenGuardService.D_LOOP_STARTS, kurulum)
+            .putLong(ScreenGuardService.D_LOOP_STARTED_AT, System.currentTimeMillis())
             .apply()
 
         worker.post(runnable)
@@ -280,6 +303,30 @@ class DetectionLoop(
             if (System.currentTimeMillis() - overlayShownAt >= Config.MAX_BLOCK_DURATION_MS) {
                 blogonKaldir("süre doldu")
             }
+            durum("blok ekrani acik")
+            return
+        }
+
+        // --- Erişilebilirlik servisi kaydı duruyor mu? ---
+        // Kayıp olduğunda döngü tık tık işlemeye devam eder ama İKİ GÖZÜ
+        // DE KAPALIDIR: ScreenReader da A11yCapturer da ilk satırda
+        // `instance ?: return` diyor. Dışarıdan bakınca "koruma açık,
+        // hiçbir şey tespit etmiyor" görünür ve sebebi hiçbir yerde
+        // yazmaz. Sayaç kalıcı: bir kez bile yaşandıysa tanı ekranında
+        // görünür, çünkü kullanıcı baktığı anda durum çoktan düzelmiş
+        // olabiliyor.
+        //
+        // SIRA ÖNEMLİ: bu kontrol blok ekranı dalının ALTINDA. Üstünde
+        // olsaydı, kayıt tam blok açıkken kaybolduğunda zorunlu kalkma
+        // sübabı hiç çalışmaz ve kullanıcı blok ekranının arkasında
+        // kilitli kalırdı — geri, ana ekran ve bildirim paneli overlay'in
+        // altında kalıyor, başka çıkış yolu yok.
+        if (PerdeAccessibilityService.instance == null) {
+            a11ysizTicks++
+            diag.edit()
+                .putInt(ScreenGuardService.D_A11Y_LOST, a11ysizTicks)
+                .apply()
+            durum("A11Y KAYDI YOK ($a11ysizTicks tick)")
             return
         }
 
@@ -303,6 +350,7 @@ class DetectionLoop(
             engine.startCooldown(now)
             blockCooldownUntil = now + Config.COOLDOWN_MS
             sifirla("ekransız blok")
+            durum("EKRANSIZ BLOK sifirlandi")
             return
         }
 
@@ -317,6 +365,7 @@ class DetectionLoop(
             // Kapalı ekranda 600 ms'te bir uyanmanın karşılığı yok.
             currentInterval = Adaptive.SLOW_INTERVAL_MS
             ekranKapaliydi = true
+            durum("ekran kapali")
             return
         }
 
@@ -543,6 +592,7 @@ class DetectionLoop(
                     else -> textVerdict.label
                 }
             )
+        durum("analiz")
         if (raw > maxRaw) {
             maxRaw = raw
             e.putFloat(ScreenGuardService.D_MAX_RAW, raw)

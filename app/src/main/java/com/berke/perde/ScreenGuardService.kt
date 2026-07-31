@@ -185,5 +185,31 @@ class ScreenGuardService : Service() {
         const val D_LAST_BLOCK = "last_block"
         /** Son bloğu hangi kanalın ve hangi skorun tetiklediği. */
         const val D_LAST_BLOCK_WHY = "last_block_why"
+
+        /**
+         * Son anlamlı tick ne yaptı: "analiz", "ekran kapali",
+         * "blok ekrani acik", "A11Y KAYDI YOK", "EKRANSIZ BLOK sifirlandi".
+         *
+         * Perde'nin kendi arayüzündeyken YAZILMIYOR — kullanıcı tanıya
+         * bakmak için uygulamayı açtığı anda tam da öğrenmek istediğimiz
+         * bilgiyi ezerdi.
+         */
+        const val D_STATE = "state"
+
+        /**
+         * Erişilebilirlik kaydı kayıpken geçen toplam tick.
+         *
+         * SIFIRDAN BÜYÜKSE arıza bulunmuş demektir: servis çalışıyor ama
+         * `instance` null olduğu için hem ekran okuma hem ekran görüntüsü
+         * ilk satırda geri dönüyor. Koruma açık görünür, hiçbir şey
+         * tespit edilmez. Sayaç kalıcı, çünkü kullanıcı baktığı anda
+         * durum çoktan düzelmiş olabiliyor.
+         */
+        const val D_A11Y_LOST = "a11y_lost"
+
+        /** Döngü kaçıncı kez kuruldu. Artıyorsa servis/süreç yeniden yaratılıyor. */
+        const val D_LOOP_STARTS = "loop_starts"
+        /** Döngünün en son kurulduğu an. */
+        const val D_LOOP_STARTED_AT = "loop_started_at"
     }
 }
