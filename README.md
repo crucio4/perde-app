@@ -361,4 +361,12 @@ girdiği için maliyet doğurmuyor.
 
 **Tasarım notu:** ilk fikir "utandırıcı olsun" idi. Utanç temelli müdahale güvenilmez: utanç → sıkıntı → sıkıntıyı bastırmak için aynı davranışa dönüş. Mesajlar bu yüzden suçlayıcı değil, değer hatırlatıcı yazıldı. Fark ince, sonuç farkı büyük.
 
-**Dini metin listeleri bilerek boş.** Kur'an ve İncil meallerinin *çevirileri* telif hakkına tabidir — orijinal metin kamu malı olsa da modern Türkçe meal çevirmenin ya da yayınevinin telifindedir. Dağıtacaksan lisansı temiz kaynak kullan ya da kendi cümlelerinle yaz. Seküler liste özgün, sorun yok.
+**Telif konusu çözüldü, listeler dolu.** Kur'an ve İncil meallerinin *çevirileri* telif hakkına tabidir — orijinal metin kamu malı olsa da modern Türkçe meal çevirmenin ya da yayınevinin telifindedir. Bu yüzden uygulamadaki Türkçe ve İngilizce metinler mevcut hiçbir mealden alınmadı, kamu malı orijinallerden (Arapça Kur'an, İbranice Tanah, Yunanca Yeni Ahit) yeniden yazıldı. Orijinal metin de gösterilebiliyor ve sure/bölüm:ayet referansı ekranda duruyor ki kullanıcı kendi tercih ettiği mealle karşılaştırabilsin.
+
+**Bunlar yetkili meal değildir** ve uygulama içinde de böyle belirtiliyor. Yayınlamadan önce her metni konusunda yetkin birine kontrol ettir; dini metni yanlış aktarmak teknik bir hatadan çok daha ciddi bir güven kaybıdır.
+
+## Lisans
+
+[GPL-3.0](LICENSE).
+
+Bu tercih bilinçli. Perde erişilebilirlik servisiyle ekrandaki her metni okuyabiliyor ve tek satışı "hiçbir veri cihazdan çıkmaz" iddiası. Copyleft, birinin kodu alıp kapalı kaynak bir türev üretmesini — içine reklam SDK'sı, telemetri ya da sunucuya gönderim koyup aynı isimle dağıtmasını — engelliyor. Türev üretmek serbest, ama kaynağı açmak zorunda; yani iddia doğrulanabilir kalıyor.
