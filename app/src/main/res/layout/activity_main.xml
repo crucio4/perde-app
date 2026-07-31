@@ -152,6 +152,25 @@
             android:textSize="12sp"
             android:alpha="0.7" />
 
+        <!-- ============ KATKI ============ -->
+        <!-- Bilerek burada: kurulum ve ayarlarin ALTINDA, blok ekraninda
+             ise HIC yok. Blok ekrani birinin en zayif ani; oraya para
+             isteyen bir sey koymak uygulamanin varlik sebebini yer. -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="28dp"
+            android:text="@string/hint_donate"
+            android:textSize="12sp"
+            android:alpha="0.7" />
+
+        <Button
+            android:id="@+id/btnDonate"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/btn_donate" />
+
         <!-- ============ TANI ============ -->
         <TextView
             android:id="@+id/diagToggle"

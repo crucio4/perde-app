@@ -108,6 +108,18 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         }
         btnStart.setOnClickListener { start() }
+
+        // Tarayiciya cikan tek yer burasi ve yalnizca kullanici dokununca
+        // aciliyor. Uygulamanin kendisi hicbir aga baglanmiyor; bagis icin
+        // bir SDK gomseydik "hicbir veri cihazdan cikmaz" iddiasi duserdi.
+        findViewById<Button>(R.id.btnDonate).setOnClickListener {
+            val url = Uri.parse(getString(R.string.donate_url))
+            try {
+                startActivity(Intent(Intent.ACTION_VIEW, url))
+            } catch (_: android.content.ActivityNotFoundException) {
+                toast(getString(R.string.toast_no_browser))
+            }
+        }
         findViewById<Button>(R.id.btnStop).apply {
             text = getString(R.string.btn_stop, (Config.DISABLE_DELAY_MS / 60000).toInt())
             setOnClickListener { requestStop() }

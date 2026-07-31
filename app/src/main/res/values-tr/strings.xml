@@ -27,6 +27,10 @@
     <string name="diag_show">▸  Tanı</string>
     <string name="diag_hide">▾  Tanı</string>
 
+    <string name="btn_donate">Katkıda bulun</string>
+    <string name="hint_donate">Perde ücretsiz ve reklamsız. Öyle de kalacak — ekranını okuyabilen bir uygulamanın içine reklam SDK\'sı koymak, verdiği tek sözü bozmak olurdu.</string>
+    <string name="toast_no_browser">Tarayıcı bulunamadı</string>
+
     <string name="label_profile">Mesaj profili</string>
     <string name="label_language">Dil</string>
     <string name="label_sensitivity">Hassasiyet</string>
