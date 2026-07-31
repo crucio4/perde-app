@@ -365,6 +365,15 @@ girdiği için maliyet doğurmuyor.
 
 **Bunlar yetkili meal değildir** ve uygulama içinde de böyle belirtiliyor. Yayınlamadan önce her metni konusunda yetkin birine kontrol ettir; dini metni yanlış aktarmak teknik bir hatadan çok daha ciddi bir güven kaybıdır.
 
+## Destek
+
+[github.com/sponsors/crucio4](https://github.com/sponsors/crucio4)
+
+Perde ücretsiz ve reklamsız; öyle kalacak. Reklam SDK'sı her istekte cihaz
+kimliği ve IP gönderir — ekrandaki her metni okuyabilen bir uygulamada bu,
+verilen tek sözü bozmak olur. Uygulama hiçbir ağa bağlanmıyor; içindeki
+"Katkıda bulun" butonu yalnızca sen dokununca tarayıcıda bu adresi açıyor.
+
 ## Lisans
 
 [GPL-3.0](LICENSE).

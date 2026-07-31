@@ -31,7 +31,7 @@
       Bagis adresi. TEK YER: values-tr altina kopyalanmadi, translatable=false.
       Degistirmek gerekince yalnizca bu satir degisiyor.
     -->
-    <string name="donate_url" translatable="false">https://github.com/crucio4/perde-app</string>
+    <string name="donate_url" translatable="false">https://github.com/sponsors/crucio4</string>
     <string name="btn_donate">Contribute</string>
     <string name="hint_donate">Perde is free and has no ads. It never will — an ad SDK inside an app that can read your screen would break the one promise it makes.</string>
     <string name="toast_no_browser">No browser found</string>

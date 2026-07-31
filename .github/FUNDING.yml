@@ -1,0 +1,4 @@
+# Repo sayfasinda "Sponsor" butonunu gosterir.
+# Uygulama icindeki "Katkida bulun" butonu ayni adrese gidiyor
+# (app/src/main/res/values/strings.xml -> donate_url).
+github: crucio4
