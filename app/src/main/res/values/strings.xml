@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Perde</string>
+    <!--
+      Erisilebilirlik listesinde gorunen ad. Servise ayri bir label
+      verilmezse uygulama adi ("Perde") kullaniliyor ve ayni cihazda
+      birden fazla kurulum varsa girisler birbirinden ayirt edilemiyor.
+    -->
+    <string name="a11y_label">Perde — screen protection</string>
     <string name="a11y_desc">Reads on-screen text so content can still be analyzed when the screen itself cannot be captured (private tabs). Text is kept in memory only — never stored, never sent anywhere.</string>
 
     <!-- Top status line: the one question the screen must answer -->

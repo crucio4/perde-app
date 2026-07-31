@@ -36,9 +36,15 @@
             android:stopWithTask="false"
             android:foregroundServiceType="mediaProjection" />
 
+        <!-- label sart: verilmezse erisilebilirlik listesinde uygulama
+             adi ("Perde") gorunuyor. Cihazda eski bir kurulum kalmissa
+             listede ayirt edilemeyen iki ayni giris olusuyor ve kullanici
+             yanlis olani aciyor — uygulama "kapali" derken Ayarlar
+             "acik" diyor. -->
         <service
             android:name=".PerdeAccessibilityService"
             android:exported="false"
+            android:label="@string/a11y_label"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />

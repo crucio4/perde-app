@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Perde</string>
+    <string name="a11y_label">Perde — ekran koruması</string>
     <string name="a11y_desc">Ekran görüntüsü alınamadığında (gizli sekme) içeriğin yine de çözümlenebilmesi için ekrandaki metni okur. Metin yalnızca bellekte tutulur — kaydedilmez, hiçbir yere gönderilmez.</string>
 
     <!-- Üstteki durum satırı: ekranın cevaplaması gereken tek soru -->
