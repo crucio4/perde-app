@@ -144,6 +144,41 @@ kullanıyorsundur, kamera — acil bir an olabilir).
 
 ---
 
+## Kurulum duvarları — izinlerden önce
+
+Gerçek cihazda ölçüldü (Xiaomi, Android 16 / HyperOS). Üçü de "uygulama
+kurulu görünüyor ama hiçbir şey yapmıyor" tablosuna çıkıyor ve üçü de hata
+değil. Kullanıcıya anlatılmazsa uygulamanın bozuk sanılmasının ana sebebi
+bunlar.
+
+**1. Play Protect kurulumu reddediyor** (`INSTALL_FAILED_VERIFICATION_FAILURE`).
+adb, `pm install`, elle kurulum — hepsi aynı kapıya çıkıyor. Sebebi mantıklı:
+ekran görüntüsü + overlay + erişilebilirlik + kapatma gecikmesi, Play
+Protect'in izleme yazılımı imzasıyla birebir örtüşüyor.
+
+Aradaki fark şu: izleme yazılımı gördüğünü bir yere **göndermek** zorundadır,
+Perde'nin ise `INTERNET` izni hiç yok — soket açamaz. Bu ayrım hem doğru hem
+de manifestten doğrulanabilir, kullanıcıya böyle anlatılmalı.
+
+> Play Store › profil › Play Protect › ⚙ › taramayı kapat → kur → geri aç
+
+**2. Android 13+ kısıtlanmış ayarlar.** Mağaza dışından kurulan uygulamada
+erişilebilirlik anahtarı sistem tarafından kilitli geliyor. Açılmazsa metin
+kanalı hiç çalışmaz; gizli sekme kapsanmaz ve tablo dışarıdan "tespit
+etmiyor" gibi görünür.
+
+> Ayarlar › Uygulamalar › Perde › ⋮ › Kısıtlanmış ayarlara izin ver
+
+Bu duvara projenin kendi geliştiricisi iki kez takıldı ve ikisinde de kod
+hatası sandı. Kullanıcıdan farkını anlamasını beklemek gerçekçi değil.
+
+**3. Klon / ikili uygulama profilleri.** Üreticinin "dual app" ya da klon
+profilinde (Xiaomi Second Space gibi) çalışan tarayıcı, ana profildeki Perde
+tarafından ne okunabiliyor ne de görüntülenebiliyor. Çözümü yok; Android'in
+uyguladığı bir sınır.
+
+---
+
 ## Bilinmesi gerekenler
 
 - **Bildirim gizlenemez.** Foreground service kalıcı bildirim zorunlu. IMPORTANCE_MIN ile en aza indirildi ama kaldırılamaz.
