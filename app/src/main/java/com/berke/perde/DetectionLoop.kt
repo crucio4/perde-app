@@ -92,10 +92,29 @@ class DetectionLoop(
     /** Peş peşe kaç kez kare alamadan yeniden kurduk. Geri çekilme için. */
     private var sourceRebuilds = 0
 
+    /** Bir önceki tick'te ekran kapalı mıydı. Uyanışta hızı geri almak için. */
+    private var ekranKapaliydi = false
+
+    /** Son tick'in saati. [saglikli] bunu okuyor. */
+    @Volatile private var sonTick = 0L
+
     private val runnable = object : Runnable {
         override fun run() {
-            try { tick() } catch (e: Exception) { Log.e(TAG, "tick hatası", e) }
-            worker.postDelayed(this, currentInterval)
+            // catch Exception YETMİYORDU. OutOfMemoryError bir Error'dır,
+            // Exception değil — ve bitmap ölçekleme/inference tam olarak onu
+            // fırlatabiliyor. Yakalanmayınca run() yarıda kesiliyor,
+            // postDelayed hiç çalışmıyor ve DÖNGÜ SESSİZCE ÖLÜYOR: tek
+            // kurtuluş uygulamayı yeniden başlatmak.
+            //
+            // postDelayed finally'de: hangi dalda çıkarsak çıkalım bir
+            // sonraki tick mutlaka planlanır.
+            try {
+                tick()
+            } catch (t: Throwable) {
+                Log.e(TAG, "tick hatası", t)
+            } finally {
+                worker.postDelayed(this, currentInterval)
+            }
         }
     }
 
@@ -115,12 +134,28 @@ class DetectionLoop(
         Log.i(TAG, "Döngü başladı, kaynak=${source.javaClass.simpleName}")
     }
 
+    /**
+     * Döngü gerçekten çalışıyor mu?
+     *
+     * "Başlat"a basmak eskiden var olan bir döngüyü hiç sorgulamadan
+     * kabul ediyordu (`if (loop != null) return`). Döngü herhangi bir
+     * sebeple durmuşsa kullanıcının elinde çare kalmıyordu: buton bir şey
+     * yapmıyor, uygulama açık görünüyor, koruma yok. Artık ölü döngü
+     * baştan kuruluyor.
+     */
+    fun saglikli(): Boolean {
+        if (!thread.isAlive) return false
+        // Henüz ilk tick atmadıysa fırsat ver; kurulum bir kaç yüz ms sürebilir.
+        if (sonTick == 0L) return true
+        return System.currentTimeMillis() - sonTick < OLU_SAYILMA_MS
+    }
+
     fun stop() {
         worker.removeCallbacksAndMessages(null)
         overlay.hide()
         source.stop()
         classifier.close()
-        ScreenReader.clear()
+        ScreenReader.reset()
         thread.quitSafely()
         Log.i(TAG, "Döngü durdu")
     }
@@ -143,40 +178,95 @@ class DetectionLoop(
         if (overlay.isShowing()) return
         overlayShownAt = now
         Log.i(TAG, "BLOK: $sebep")
+        diag.edit()
+            .putLong(ScreenGuardService.D_LAST_BLOCK, now)
+            .putString(ScreenGuardService.D_LAST_BLOCK_WHY, sebep)
+            .apply()
         overlay.show(Motivation.pick(ctx))
     }
 
+    /**
+     * Blok ekranını kaldırır ve döngüyü SOĞUK BAŞLANGIÇ durumuna döndürür.
+     *
+     * NEDEN HEPSİ BİRDEN: "bir kez blokladıktan sonra tespit ölüyor,
+     * uygulamaya bir saniye girip çıkınca düzeliyor" arızası üç kez
+     * düzeltildi ve her seferinde geri geldi. Sebep tek tek hatalar değil,
+     * YAPI: normale dönüş beş ayrı yere dağılmıştı (blok kaldırma, paket
+     * değişimi, izlenmeyen paket, gözcü, motor reseti) ve her biri farklı
+     * bir alt kümeyi sıfırlıyordu. Hangi alan atlanırsa döngü o alanda
+     * takılı kalıyor, kullanıcının "gir çık" hareketi ise izlenmeyen paket
+     * dalını tetiklediği için HEPSİNİ sıfırlıyor ve arızayı gizliyordu.
+     *
+     * Bu yüzden [sifirla] tek yetkili nokta: kullanıcının elle yaptığı
+     * kurtarmanın birebir aynısı, koşulsuz, her blok sonrasında.
+     */
     private fun blogonKaldir(sebep: String) {
         val now = System.currentTimeMillis()
         overlay.hide()
         blockCooldownUntil = now + Config.COOLDOWN_MS
-        engine.reset()
         // Soğuma İKİ yerde birden bilinmeli. Motor bunu bilmezse reset
         // sonrası aynı içerikte hemen BLOCKED'a geri dönüyor, döngü ise
         // kendi soğuması yüzünden overlay'i açmıyor; motor ekransız
         // BLOCKED'da kilitleniyor ve içerik değişmediği için oradan bir
-        // daha çıkamıyordu. Uygulama oturum başına bir kez bloklayıp
-        // sessizce koruma bırakıyordu.
+        // daha çıkamıyordu.
         engine.startCooldown(now)
+        sifirla("blok kaldırıldı: $sebep")
+    }
+
+    /**
+     * Döngünün TÜM oynak durumunu başlangıç haline getirir.
+     *
+     * Buraya bir alan eklemeyi unutmak, arızanın geri gelmesi demek —
+     * yeni bir durum alanı eklerken burayı da güncelle.
+     */
+    private fun sifirla(sebep: String) {
+        engine.reset()
         differ.reset()
+        // Erişilebilirlik okuması da bayat kalabiliyor: blok boyunca
+        // ekranda bizim overlay'imiz vardı, elimizdeki metin o ana ait.
+        ScreenReader.reset()
+
         lastProbs = null
         lastEvidence = 1f
+        lastImageLabel = "-"
         korTicks = 0
         blindMuteTicks = 0
+        maxRaw = 0f
+        analyzedFrames = 0
 
-        // Blok boyunca tick() en başta dönüyordu, yani kaynağa 8 saniye hiç
-        // dokunulmadı. O aradan sonra kaynağı kaldığı yerden sürdürmek
-        // güvenilir değil: kullanıcı "bir kez bloklandıktan sonra bir daha
-        // tespit etmiyor, Başlat'a basınca düzeliyor" diye bildirdi ve
-        // Başlat'ın yaptığı tam olarak buydu. Baştan kurmak bir tick'e mal
-        // oluyor, karşılığında bütün bir takılma sınıfı ortadan kalkıyor.
+        // Paket kimliğini de unutuyoruz: bir sonraki tick hangi uygulamada
+        // olursak olalım "yeni uygulama" muamelesi yapsın, taze başlasın.
+        lastWatchedPackage = null
+
+        // Örnekleme hızı: blok sonrası sakin moda düşmüş olabiliriz, o
+        // hâlde bir sonraki tespit 3 saniye gecikir. Hızlıdan başla.
+        calmFrames = 0
+        currentInterval = Adaptive.FAST_INTERVAL_MS
+
+        // Kaynağı kaldığı yerden sürdürmek güvenilir değil: blok boyunca
+        // tick() en başta döndüğü için kaynağa saniyelerce dokunulmadı.
+        // Baştan kurmak bir tick'e mal oluyor, karşılığında bütün bir
+        // takılma sınıfı ortadan kalkıyor.
         source.stop()
+        sourceRebuilds = 0
+        sourceStartedAt = 0L
         lastGoodFrameAt = 0L
 
-        Log.i(TAG, "Blok kaldırıldı ($sebep), kaynak yeniden kurulacak")
+        Log.i(TAG, "Döngü sıfırlandı ($sebep), kaynak yeniden kurulacak")
     }
 
     private fun tick() {
+        // --- Kalp atışı ---
+        // TÜM erken dönüşlerden önce yazılıyor, çünkü cevaplaması gereken
+        // soru tam olarak şu: "döngü hâlâ çalışıyor mu, yoksa öldü mü?"
+        // D_FRAMES bunu cevaplayamıyor — o yalnızca analize KADAR gelinen
+        // tick'lerde artıyor, dolayısıyla erken dönen bir döngüyle ölmüş
+        // bir döngü orada birbirinden ayırt edilemiyordu.
+        sonTick = System.currentTimeMillis()
+        diag.edit()
+            .putLong(ScreenGuardService.D_HEARTBEAT, sonTick)
+            .apply()
+
         // --- Blok ekranı açıkken ---
         // KRİTİK: overlay açıkken yakalanan kare artık ekrandaki içerik
         // değil, KENDİ opak katmanımız. Onu analiz etmek anlamsız — dahası
@@ -193,6 +283,29 @@ class DetectionLoop(
             return
         }
 
+        // --- DEĞİŞMEZ KURAL: "ekransız BLOK" diye bir durum yoktur ---
+        //
+        // Buraya gelmişsek overlay kapalı. Motor hâlâ BLOCKED ise bu bir
+        // arızadır ve tam olarak kullanıcının tarif ettiği ölümü üretir:
+        // BLOCKED'dan çıkmak skorun düşmesine bağlı, kullanıcı aynı sayfada
+        // olduğu için skor düşmüyor, yeni blok da açılmıyor çünkü blok
+        // yalnızca DURUM DEĞİŞİMİNDE (justChanged) açılıyor. Motor sonsuza
+        // kadar asılı kalıyor; üstelik aşağıdaki paket kontrolleri de
+        // "CLEAR değilse atla" dediği için kendini toparlayamıyor.
+        //
+        // Bu duruma götüren yolları tek tek kovalamak yerine — üç kez
+        // denendi, her seferinde yenisi çıktı — durumun kendisini yasaklıyoruz.
+        // Overlay açılamamışsa (izin yok, addView hata verdi) da buraya
+        // düşülür; soğuma o yüzden şart, yoksa her tick yeniden denenir.
+        if (engine.currentState() != DetectionEngine.State.CLEAR) {
+            val now = System.currentTimeMillis()
+            Log.w(TAG, "Motor ekransız BLOKTA kalmış — sıfırlanıyor")
+            engine.startCooldown(now)
+            blockCooldownUntil = now + Config.COOLDOWN_MS
+            sifirla("ekransız blok")
+            return
+        }
+
         // --- Ekran kapalıyken hiçbir şey yapma ---
         // Kapalı ekranda takeScreenshot ya hata veriyor ya siyah kare
         // döndürüyor; bakılmayan bir ekranı analiz etmenin de anlamı yok.
@@ -201,7 +314,18 @@ class DetectionLoop(
             blindMuteTicks = 0
             lastGoodFrameAt = 0L
             ScreenReader.clear()
+            // Kapalı ekranda 600 ms'te bir uyanmanın karşılığı yok.
+            currentInterval = Adaptive.SLOW_INTERVAL_MS
+            ekranKapaliydi = true
             return
+        }
+
+        // Ekran yeni açıldı: yavaşlatılmış aralıkla devam edersek ilk tespit
+        // 3 saniye geç kalır. Kilit açıldığında tam hızda başlıyoruz.
+        if (ekranKapaliydi) {
+            ekranKapaliydi = false
+            calmFrames = 0
+            currentInterval = Adaptive.FAST_INTERVAL_MS
         }
 
         val pkg = appWatcher.currentForegroundPackage()
@@ -211,36 +335,41 @@ class DetectionLoop(
             Log.d(TAG, "ön planda: $pkg  izlenecek=${appWatcher.shouldMonitor(pkg)}")
         }
 
-        // Kendi overlay'imiz açıkken öndeki paket değişmiş görünebilir; blok
-        // durumundayken paket kontrolünü atla.
-        if (engine.currentState() == DetectionEngine.State.CLEAR &&
-            !appWatcher.shouldMonitor(pkg)
-        ) {
-            if (source.isRunning()) {
-                source.stop()
-                engine.reset()
-                differ.reset()
-                lastProbs = null
-                lastEvidence = 1f
-                korTicks = 0
-                blindMuteTicks = 0
-                lastGoodFrameAt = 0L
-                ScreenReader.clear()
-            }
+        // Bu iki dal eskiden ayrıca "motor CLEAR ise" diye kontrol
+        // ediyordu. Motor takılınca kendini toparlayamamasının sebebi tam
+        // olarak oydu: kurtarma yolu, kurtarılması gereken duruma kapalıydı.
+        // Artık gerek de yok — yukarıdaki değişmez kural buraya CLEAR
+        // olmadan gelinemeyeceğini garanti ediyor.
+        if (!appWatcher.shouldMonitor(pkg)) {
+            if (source.isRunning()) sifirla("izlenmeyen paket: $pkg")
             lastWatchedPackage = null
+            // İzlenmeyen uygulamada hızlı örneklemenin karşılığı yok.
+            currentInterval = Adaptive.SLOW_INTERVAL_MS
             return
         }
 
-        if (pkg != lastWatchedPackage && engine.currentState() == DetectionEngine.State.CLEAR) {
+        if (pkg != lastWatchedPackage) {
+            // Yeni uygulama: önceki uygulamanın skorları taşınmamalı.
             engine.reset()
+            differ.reset()
+            lastProbs = null
+            lastEvidence = 1f
             lastWatchedPackage = pkg
             maxRaw = 0f
             analyzedFrames = 0
             blindMuteTicks = 0
+            // İzlenmeyen bir uygulamadan dönmüş olabiliriz; orada aralığı
+            // yavaşlatmıştık. Yeni uygulamaya tam hızda giriyoruz, yoksa
+            // ilk tespit 3 saniye geç kalır.
+            calmFrames = 0
+            currentInterval = Adaptive.FAST_INTERVAL_MS
         }
 
-        if (!source.isRunning()) {
-            if (!source.start()) return
+        // Kaynak kurulamazsa da devam: piksel kanalı kapalı kalır ama
+        // İÇERİK KANALI ÇALIŞIR. Eskiden burada return vardı ve piksel
+        // tarafındaki bir arıza metin kanalını da susturuyordu — gizli
+        // sekmede tek çalışan kanal o.
+        if (!source.isRunning() && source.start()) {
             sourceStartedAt = System.currentTimeMillis()
         }
 
@@ -277,6 +406,11 @@ class DetectionLoop(
         val referans = if (lastGoodFrameAt != 0L) lastGoodFrameAt else sourceStartedAt
         val karesizSure = if (referans == 0L) 0L else simdi - referans
 
+        // Gözcü YALNIZCA piksel kanalını onarır. Eskiden burada return
+        // vardı: kaynak her takıldığında o tick'te motor hiç
+        // güncellenmiyordu, yani piksel arızası metin kanalının oyunu da
+        // yutuyordu. Kaynağı yeniden kurup aynı tick içinde devam ediyoruz;
+        // bu tick'te kare gelmez, gelmemesi de sorun değil.
         if (!source.isSecureBlocked() && karesizSure > gozcuAraligi()) {
             sourceRebuilds++
             Log.w(TAG, "Kaynak ${karesizSure}ms'dir kare vermiyor ($sourceRebuilds. kurulum), sebep=${source.lastError()}")
@@ -287,7 +421,6 @@ class DetectionLoop(
             lastProbs = null
             lastEvidence = 1f
             lastGoodFrameAt = 0L
-            return
         }
 
         // ==============================================================
@@ -378,6 +511,12 @@ class DetectionLoop(
             .putString(ScreenGuardService.D_SENS, Hassasiyet.aktif.name)
             .putString(ScreenGuardService.D_WINDOW, engine.windowStatus())
             .putString(ScreenGuardService.D_SOURCE, source.javaClass.simpleName)
+            // Blok gelmiyorsa iki sebepten biridir: skor yetmiyor ya da
+            // soğumadayız. İkisini ayırt etmenin cihazdaki tek yolu bu.
+            .putLong(
+                ScreenGuardService.D_COOLDOWN,
+                maxOf(0L, blockCooldownUntil - System.currentTimeMillis())
+            )
             .putInt(ScreenGuardService.D_STARVED, blindMuteTicks)
             .putString(
                 ScreenGuardService.D_BLIND,
@@ -420,7 +559,11 @@ class DetectionLoop(
                         "içerik %.2f (%s)".format(textVerdict.score, textVerdict.label)
                     else "görüntü %.3f".format(raw)
                 )
-                DetectionEngine.State.CLEAR -> overlay.hide()
+                // Emniyet ağı: değişmez kural sayesinde motorun ekransız
+                // BLOCKED'da kalması artık mümkün değil, yani buraya normalde
+                // gelinmiyor. Gelinirse de çıkış yolu diğerleriyle aynı
+                // olmalı — çıplak overlay.hide() soğumaları kurmuyordu.
+                DetectionEngine.State.CLEAR -> blogonKaldir("skor düştü")
             }
         }
 
@@ -475,5 +618,13 @@ class DetectionLoop(
 
         /** Geri çekilmiş gözcü aralığı. */
         private const val SOURCE_RETRY_SLOW_MS = 60_000L
+
+        /**
+         * Bu süredir tick atmayan döngü ölü sayılır.
+         *
+         * En yavaş aralık 3 sn; 30 sn, geçici bir sistem duraklamasını
+         * ölümle karıştırmayacak kadar geniş.
+         */
+        private const val OLU_SAYILMA_MS = 30_000L
     }
 }

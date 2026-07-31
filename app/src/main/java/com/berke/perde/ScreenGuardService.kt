@@ -168,5 +168,22 @@ class ScreenGuardService : Service() {
         const val D_TEXT_RAW = "text_raw"
         /** İçerik analizi özeti: kaç güçlü/belirsiz/destek/ters eşleşme. */
         const val D_TEXT_INFO = "text_info"
+
+        /**
+         * Son tick'in saati. Döngünün YAŞADIĞINI gösteren tek alan.
+         *
+         * D_FRAMES bunu cevaplamıyordu: yalnızca analize kadar gelinen
+         * tick'lerde artıyor, dolayısıyla "izlenmeyen uygulamadayız" ile
+         * "döngü öldü" orada aynı görünüyordu. Tespitin durduğu her
+         * şikayette ilk bakılacak yer burası — sayı büyümüyorsa sorun
+         * eşiklerde değil, döngünün kendisinde.
+         */
+        const val D_HEARTBEAT = "heartbeat"
+        /** Soğumanın bitmesine kalan süre (ms). */
+        const val D_COOLDOWN = "cooldown"
+        /** Son bloğun saati. */
+        const val D_LAST_BLOCK = "last_block"
+        /** Son bloğu hangi kanalın ve hangi skorun tetiklediği. */
+        const val D_LAST_BLOCK_WHY = "last_block_why"
     }
 }

@@ -56,6 +56,7 @@ object ScreenReader {
     private val main = Handler(Looper.getMainLooper())
 
     @Volatile private var pending = false
+    @Volatile private var pendingSince = 0L
     @Volatile private var lastHarvestAt = 0L
 
     /**
@@ -65,9 +66,19 @@ object ScreenReader {
      */
     fun requestRefresh() {
         val svc = PerdeAccessibilityService.instance ?: return
-        if (pending) return
-        if (SystemClock.uptimeMillis() - lastHarvestAt < MIN_INTERVAL_MS) return
+        val now = SystemClock.uptimeMillis()
+
+        // pending zaman aşımsızdı ve bu tek başına içerik kanalını kalıcı
+        // olarak öldürebiliyordu: ana iş parçacığına gönderilen iş bir
+        // sebeple hiç çalışmazsa (servis yeniden bağlanıyor, main looper
+        // tıkalı) bayrak sonsuza kadar true kalıyor, bir daha HİÇ okuma
+        // yapılmıyor. Gizli sekmede içerik tek kanal olduğu için bu,
+        // tespitin tamamen ölmesi demek.
+        if (pending && now - pendingSince < PENDING_TIMEOUT_MS) return
+        if (now - lastHarvestAt < MIN_INTERVAL_MS) return
+
         pending = true
+        pendingSince = now
         main.post {
             try {
                 harvest(svc)
@@ -80,6 +91,20 @@ object ScreenReader {
     }
 
     fun clear() { latest = ScreenContent.EMPTY }
+
+    /**
+     * Okuyucuyu soğuk başlangıç durumuna alır.
+     *
+     * [clear]'dan farkı kısıtlayıcıları da sıfırlaması: döngü kendini
+     * toparlarken bir sonraki okumanın 500 ms beklemesi ya da takılı bir
+     * pending bayrağının devralınması istenmiyor.
+     */
+    fun reset() {
+        latest = ScreenContent.EMPTY
+        pending = false
+        pendingSince = 0L
+        lastHarvestAt = 0L
+    }
 
     // ------------------------------------------------------------------
 
@@ -203,6 +228,13 @@ object ScreenReader {
 
     /** İki okuma arasındaki en kısa süre. Döngü 600 ms'te bir tick atıyor. */
     private const val MIN_INTERVAL_MS = 500L
+
+    /**
+     * Bekleyen okuma bu süre içinde bitmezse düşmüş sayılır ve yenisi
+     * gönderilir. Ağaç yürüyüşünün kendi bütçesi 90 ms; 3 saniye, ana iş
+     * parçacığının geçici tıkanmalarını da rahatça kapsıyor.
+     */
+    private const val PENDING_TIMEOUT_MS = 3_000L
 
     private const val MAX_NODES = 1400
     private const val MAX_DEPTH = 45

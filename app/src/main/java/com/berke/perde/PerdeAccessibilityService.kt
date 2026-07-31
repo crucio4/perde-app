@@ -55,7 +55,15 @@ class PerdeAccessibilityService : AccessibilityService() {
     }
 
     fun startLoop() {
-        if (loop != null) return
+        // "loop != null ise dokunma" yetmiyordu: döngü herhangi bir sebeple
+        // durmuşsa Başlat butonu sessizce hiçbir şey yapmıyor, kullanıcı
+        // korumanın açık olduğunu sanıyordu. Ölü döngü baştan kurulur.
+        loop?.let {
+            if (it.saglikli()) return
+            Log.w(TAG, "Döngü yanıt vermiyor, baştan kuruluyor")
+            it.stop()
+            loop = null
+        }
         if (!Guard.a11yCaptureAvailable()) {
             Log.w(TAG, "takeScreenshot kullanılamıyor (API < 30), döngü başlatılmadı")
             return
@@ -70,7 +78,7 @@ class PerdeAccessibilityService : AccessibilityService() {
     fun stopLoop() {
         loop?.stop()
         loop = null
-        ScreenReader.clear()
+        ScreenReader.reset()
     }
 
     override fun onUnbind(intent: android.content.Intent?): Boolean {

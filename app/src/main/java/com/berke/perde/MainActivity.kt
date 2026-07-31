@@ -251,6 +251,28 @@ class MainActivity : AppCompatActivity() {
             }
             append("koruma       ").append(if (Guard.isEnabled(this@MainActivity)) "ACIK" else "kapali")
             append('\n')
+
+            // --- Dongu yasiyor mu? ---
+            // "Bir kez blokladi, sonra hic tespit etmiyor" sikayetinde ILK
+            // bakilacak satir. Kac saniye once tick attigini soyluyor:
+            // 0-1 sn ise dongu saglam, sorun esiklerde ya da okumada.
+            // Buyuyup duruyorsa dongu olmus, esiklere bakmanin anlami yok.
+            val hb = d.getLong(ScreenGuardService.D_HEARTBEAT, 0L)
+            append("dongu        ")
+            if (hb == 0L) append("hic calismadi")
+            else append(((System.currentTimeMillis() - hb) / 1000)).append(" sn once")
+            append('\n')
+
+            val lastBlock = d.getLong(ScreenGuardService.D_LAST_BLOCK, 0L)
+            if (lastBlock != 0L) {
+                append("son blok     ")
+                    .append((System.currentTimeMillis() - lastBlock) / 1000).append(" sn once\n")
+                append("  sebep      ")
+                    .append(d.getString(ScreenGuardService.D_LAST_BLOCK_WHY, "-")).append('\n')
+            }
+            val cd = d.getLong(ScreenGuardService.D_COOLDOWN, 0L)
+            if (cd > 0) append("sogumada     ").append(cd).append(" ms\n")
+
             append("kaynak       ").append(d.getString(ScreenGuardService.D_SOURCE, "-")).append('\n')
             val a11yOn = PerdeAccessibilityService.instance != null
             append("erisilebilir ").append(if (a11yOn) "OK" else "KAPALI").append('\n')
