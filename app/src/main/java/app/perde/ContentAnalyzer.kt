@@ -1,4 +1,4 @@
-package com.berke.perde
+package app.perde
 
 import kotlin.math.exp
 import kotlin.math.sqrt

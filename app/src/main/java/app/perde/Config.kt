@@ -1,4 +1,4 @@
-package com.berke.perde
+package app.perde
 
 /**
  * Tüm eşik değerleri ve zamanlama parametreleri burada.
@@ -176,7 +176,7 @@ object Config {
         // siyah kare tespitiyle yanlış tetiklenmesin diye)
         "com.google.android.apps.walletnfcrel",
         // kendi uygulamamız
-        "com.berke.perde"
+        "app.perde"
     )
 
     /**

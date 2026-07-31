@@ -21,7 +21,7 @@ import re
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-LEXICON = os.path.join(ROOT, "app/src/main/java/com/berke/perde/Lexicon.kt")
+LEXICON = os.path.join(ROOT, "app/src/main/java/app/perde/Lexicon.kt")
 
 # ---------------------------------------------------------------- sozluk
 
@@ -352,10 +352,10 @@ SAMPLES = [
      Aksiyon Gerilim Romantik Komedi Belgesel Cocuklar"""),
 
     ("kod / github", False,
-     "github.com/berke/perde",
+     "github.com/crucio4/perde-app",
      "perde: Ekran icerigi filtresi",
      """Code Issues Pull requests Actions Commit history README.md
-     app src main java com berke perde ContentAnalyzer.kt class
+     app src main java app perde ContentAnalyzer.kt class
      function import private val return null String build gradle
      kotlin android error debug server"""),
 

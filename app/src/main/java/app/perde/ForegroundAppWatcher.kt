@@ -1,4 +1,4 @@
-package com.berke.perde
+package app.perde
 
 import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager

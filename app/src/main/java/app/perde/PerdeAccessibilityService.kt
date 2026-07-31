@@ -1,4 +1,4 @@
-package com.berke.perde
+package app.perde
 
 import android.accessibilityservice.AccessibilityService
 import android.util.Log

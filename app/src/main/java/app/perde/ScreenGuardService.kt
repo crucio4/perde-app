@@ -1,4 +1,4 @@
-package com.berke.perde
+package app.perde
 
 import android.app.*
 import android.content.Context
@@ -136,7 +136,7 @@ class ScreenGuardService : Service() {
         private const val NOTIF_ID = 1001
         const val EXTRA_RESULT_CODE = "result_code"
         const val EXTRA_RESULT_DATA = "result_data"
-        const val ACTION_STOP = "com.berke.perde.STOP"
+        const val ACTION_STOP = "app.perde.STOP"
 
         // --- Tani anahtarlari (MainActivity ve DetectionLoop de kullaniyor) ---
         const val DIAG_PREFS = "perde_diag"

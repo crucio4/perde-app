@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "com.berke.perde"
+    namespace = "app.perde"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.berke.perde"
+        applicationId = "app.perde"
         minSdk = 26
         targetSdk = 34
         versionCode = 1

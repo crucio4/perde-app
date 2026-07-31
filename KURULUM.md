@@ -56,7 +56,7 @@ perde/app/src/main/assets/nsfw.tflite
 
 ### Gözden geçirilecek ayarlar
 
-`app/src/main/java/com/berke/perde/Config.kt`:
+`app/src/main/java/app/perde/Config.kt`:
 
 | Ayar | Varsayılan | Ne zaman değiştirirsin |
 |---|---|---|
