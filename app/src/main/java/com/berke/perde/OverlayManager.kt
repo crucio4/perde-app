@@ -43,13 +43,26 @@ class OverlayManager(private val context: Context) {
             @Suppress("DEPRECATION")
             WindowManager.LayoutParams.TYPE_SYSTEM_ALERT
 
-    fun show(message: String = "Kapat.") {
+    fun show(message: Motivation.Shown = Motivation.Shown("", "Kapat.", "")) {
         if (shown) return
         shown = true
         main.post {
             if (view != null) return@post
             val v = LayoutInflater.from(context).inflate(R.layout.overlay_block, null)
-            v.findViewById<TextView>(R.id.blockMessage)?.text = message
+
+            v.findViewById<TextView>(R.id.blockMessage)?.text = message.body
+            // Boş parçalar GONE kalmali: INVISIBLE olsa yer kaplayip
+            // metni ekranin ortasindan kaydiriyor.
+            v.findViewById<TextView>(R.id.blockOriginal)?.apply {
+                text = message.original
+                visibility = if (message.original.isBlank()) View.GONE else View.VISIBLE
+            }
+            v.findViewById<TextView>(R.id.blockRef)?.apply {
+                text = "— ${message.ref}"
+                visibility = if (message.ref.isBlank()) View.GONE else View.VISIBLE
+            }
+
+            val content = v.findViewById<View>(R.id.blockContent)
 
             val params = WindowManager.LayoutParams(
                 WindowManager.LayoutParams.MATCH_PARENT,
@@ -61,8 +74,18 @@ class OverlayManager(private val context: Context) {
                 PixelFormat.OPAQUE
             ).apply { gravity = Gravity.TOP or Gravity.START }
 
+            // Ani beliren metin refleksle "kapat"a bastiriyor; kisa bir
+            // acilma gozun metne inmesini sagliyor.
+            //
+            // DIKKAT: solan sey yalnizca METIN. Kok gorunumun kendisi
+            // fade edilirse siyah zemin de yariseffaf oluyor ve altindaki
+            // icerik animasyon boyunca gorunuyor — engellemek istedigimiz
+            // seyi yarim saniye daha gostermis oluruz.
+            content?.alpha = 0f
+
             try {
                 wm.addView(v, params)
+                content?.animate()?.alpha(1f)?.setDuration(FADE_IN_MS)?.start()
                 view = v
             } catch (_: Exception) {
                 // Overlay izni yoksa ekran hiç açılmıyor; bayrağı geri al,
@@ -85,6 +108,11 @@ class OverlayManager(private val context: Context) {
     }
 
     fun isShowing() = shown
+
+    private companion object {
+        /** Metnin acilma suresi. Uzatma: blok ani hissedilmeli. */
+        const val FADE_IN_MS = 280L
+    }
 
     private fun goHome() {
         val intent = Intent(Intent.ACTION_MAIN).apply {

@@ -75,6 +75,9 @@ class PerdeAccessibilityService : AccessibilityService() {
         }.also { it.start() }
     }
 
+    /** Kurulu bir döngü var mı ve tik atıyor mu? Bkz. Guard.isRunning(). */
+    fun loopSaglikli(): Boolean = loop?.saglikli() == true
+
     fun stopLoop() {
         loop?.stop()
         loop = null

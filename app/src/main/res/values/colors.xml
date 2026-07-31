@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Acik tema renkleri. Tek is: durum satirinin ACIK/KAPALI ayrimini
+  metin okunmadan once tasimak. values-night/ altinda ayni isimlerin
+  koyu zemin karsiliklari var — tek bir renk iki temada da okunmuyor.
+-->
+<resources>
+    <color name="perde_on">#2E7D32</color>
+    <color name="perde_off">#C62828</color>
+</resources>

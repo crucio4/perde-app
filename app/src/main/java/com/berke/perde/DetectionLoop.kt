@@ -677,7 +677,10 @@ class DetectionLoop(
          *
          * En yavaş aralık 3 sn; 30 sn, geçici bir sistem duraklamasını
          * ölümle karıştırmayacak kadar geniş.
+         *
+         * Guard.isRunning() de aynı eşiği kullanıyor — ana ekranın "AÇIK"
+         * dediği an ile döngünün kendini sağlıklı saydığı an ayrışmasın.
          */
-        private const val OLU_SAYILMA_MS = 30_000L
+        const val OLU_SAYILMA_MS = 30_000L
     }
 }

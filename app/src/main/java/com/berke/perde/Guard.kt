@@ -32,6 +32,39 @@ object Guard {
     }
 
     /**
+     * Koruma GERCEKTEN calisiyor mu?
+     *
+     * isEnabled() bunu soylemiyor: o "acik olmali" diyen kalici bir niyet
+     * bayragi. Bayrak true iken korumanin fiilen olmadigi en az iki durum
+     * var — MediaProjection yolunda surec olunce token kayboluyor, bir de
+     * kullanici erisilebilirlik servisini sistem ayarlarindan kapatabiliyor.
+     *
+     * Ana ekranin ustundeki satir bu ayrimi yapmak zorunda: "ACIK" yazip
+     * aslinda korumasiz olmak, kullaniciyi hic korumamaktan daha kotu.
+     */
+    fun isRunning(ctx: Context): Boolean {
+        if (!isEnabled(ctx)) return false
+
+        // Erisilebilirlik yolu: dongu nesnesi elimizde, sagligini kendi
+        // biliyor (henuz ilk tick'ini atmamis olmasina da izin veriyor).
+        if (PerdeAccessibilityService.instance?.loopSaglikli() == true) return true
+
+        // MediaProjection yolu: dongu baska bir serviste yasiyor. Iki yolun
+        // da yazdigi tek ortak isaret kalp atisi — tick()'te butun erken
+        // donuslerden ONCE yaziliyor, yani "calisiyor mu" sorusunu tam
+        // olarak cevapliyor.
+        val d = ctx.getSharedPreferences(ScreenGuardService.DIAG_PREFS, Context.MODE_PRIVATE)
+        val simdi = System.currentTimeMillis()
+        val hb = d.getLong(ScreenGuardService.D_HEARTBEAT, 0L)
+        if (hb != 0L && simdi - hb < DetectionLoop.OLU_SAYILMA_MS) return true
+
+        // Yeni kurulmus dongu henuz ilk tick'ini atmamis olabilir; o aralikta
+        // eski/bayat kalp atisina bakip "kapali" demek yanlis alarm olurdu.
+        val kurulus = d.getLong(ScreenGuardService.D_LOOP_STARTED_AT, 0L)
+        return kurulus != 0L && simdi - kurulus < DetectionLoop.OLU_SAYILMA_MS
+    }
+
+    /**
      * takeScreenshot yolu kullanilabilir mi?
      *
      * Bu kontrol bilerek A11yCapturer'in DISINDA: o sinif API 30'da gelen

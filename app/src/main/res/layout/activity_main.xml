@@ -1,4 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Ekranin duzeni bir soruya gore siralandi: "koruma su an calisiyor mu?"
+  Cevap en ustte, tek satirda. Altinda kurulum adimlari, sonra ayarlar,
+  en altta nadiren dokunulacak seyler (tani ve durdurma).
+
+  Tani blogu KATLI duruyor ama silinmedi — blok sonrasi tespitin olmesi
+  arizasinda tek gorunur kanit oydu. Varsayilan kapali olmasinin sebebi
+  su: acikken ekranin gorsel agirliginin cogunu kapliyor ve normal
+  kullanici uygulamayi acinca once onu goruyordu.
+-->
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
@@ -16,18 +26,73 @@
             android:textSize="30sp"
             android:textStyle="bold" />
 
+        <!-- Tek cumlelik cevap. Rengi ve metni MainActivity.refresh()
+             icinde ayarlaniyor. -->
         <TextView
-            android:id="@+id/status"
+            android:id="@+id/statusHeader"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:fontFamily="monospace"
-            android:textSize="13sp" />
+            android:layout_marginTop="6dp"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/statusHint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:textSize="13sp"
+            android:alpha="0.7" />
+
+        <!-- ============ KURULUM ============ -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="28dp"
+            android:text="@string/section_setup"
+            android:textStyle="bold"
+            android:textSize="15sp" />
+
+        <!-- Butonlarin metni durum tasiyor (✓ verildi / ○ eksik), cunku
+             once "1. Overlay izni ver" yaziyordu ve hangisinin tamam
+             oldugunu anlamak icin asagidaki tani blogundaki ayri bir
+             satirla eslestirmek gerekiyordu. -->
+        <Button
+            android:id="@+id/btnOverlayPerm"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp" />
+        <Button
+            android:id="@+id/btnUsagePerm"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp" />
+        <Button
+            android:id="@+id/btnA11yPerm"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp" />
+
+        <Button
+            android:id="@+id/btnStart"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="@string/btn_start" />
+
+        <!-- ============ AYARLAR ============ -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="32dp"
+            android:text="@string/section_settings"
+            android:textStyle="bold"
+            android:textSize="15sp" />
 
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
+            android:layout_marginTop="12dp"
             android:text="@string/label_language"
             android:textStyle="bold" />
         <Spinner
@@ -50,13 +115,25 @@
             android:id="@+id/checkOriginal"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
             android:text="@string/label_show_original" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="@string/label_sensitivity"
+            android:textStyle="bold" />
+        <Spinner
+            android:id="@+id/spinnerSens"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content" />
 
         <CheckBox
             android:id="@+id/checkBlockSecure"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
+            android:layout_marginTop="12dp"
             android:text="@string/label_block_secure" />
 
         <TextView
@@ -70,52 +147,38 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:text="@string/label_sensitivity"
-            android:textStyle="bold" />
-        <Spinner
-            android:id="@+id/spinnerSens"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
             android:layout_marginTop="20dp"
             android:text="@string/disclaimer_translation"
             android:textSize="12sp"
             android:alpha="0.7" />
 
-        <Button
-            android:id="@+id/btnOverlayPerm"
+        <!-- ============ TANI ============ -->
+        <TextView
+            android:id="@+id/diagToggle"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
-            android:text="@string/perm_overlay" />
-        <Button
-            android:id="@+id/btnUsagePerm"
+            android:layout_marginTop="32dp"
+            android:paddingTop="12dp"
+            android:paddingBottom="12dp"
+            android:textStyle="bold"
+            android:textSize="15sp"
+            android:alpha="0.8"
+            android:background="?android:attr/selectableItemBackground" />
+
+        <TextView
+            android:id="@+id/status"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:text="@string/perm_usage" />
-        <Button
-            android:id="@+id/btnA11yPerm"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:text="@string/perm_a11y" />
-        <Button
-            android:id="@+id/btnStart"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:text="@string/btn_start" />
+            android:fontFamily="monospace"
+            android:textSize="13sp"
+            android:visibility="gone" />
+
         <Button
             android:id="@+id/btnStop"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="32dp"
-            android:text="@string/btn_stop" />
+            android:layout_marginTop="40dp"
+            android:alpha="0.65" />
 
     </LinearLayout>
 </ScrollView>

@@ -3,11 +3,29 @@
     <string name="app_name">Perde</string>
     <string name="a11y_desc">Ekran görüntüsü alınamadığında (gizli sekme) içeriğin yine de çözümlenebilmesi için ekrandaki metni okur. Metin yalnızca bellekte tutulur — kaydedilmez, hiçbir yere gönderilmez.</string>
 
-    <string name="perm_overlay">1. Overlay izni ver</string>
-    <string name="perm_usage">2. Kullanım erişimi ver</string>
-    <string name="perm_a11y">3. Erişilebilirlik servisini aç</string>
-    <string name="btn_start">4. Başlat</string>
-    <string name="btn_stop">Durdur (gecikmeli)</string>
+    <!-- Üstteki durum satırı: ekranın cevaplaması gereken tek soru -->
+    <string name="status_on">● KORUMA AÇIK</string>
+    <string name="status_off">○ KORUMA KAPALI</string>
+    <string name="status_hint_running">Ekran içeriği bu cihazda analiz ediliyor.</string>
+    <string name="status_hint_setup">Önce aşağıdaki adımları tamamla.</string>
+    <string name="status_hint_ready">Hazır — Korumayı başlat\'a dokun.</string>
+    <string name="status_hint_stalled">Açık bırakılmıştı ama döngü durmuş. Şu an korumasızsın — yeniden başlat.</string>
+    <string name="status_hint_stopping">Durdurma isteği alındı — %1$s sonra kapanacak.</string>
+
+    <string name="section_setup">Kurulum</string>
+    <string name="section_settings">Ayarlar</string>
+
+    <string name="setup_overlay">Overlay izni</string>
+    <string name="setup_usage">Kullanım erişimi</string>
+    <string name="setup_a11y">Erişilebilirlik servisi</string>
+    <string name="setup_done">✓  %1$s</string>
+    <string name="setup_todo">○  %1$s — dokun, izin ver</string>
+
+    <string name="btn_start">Korumayı başlat</string>
+    <string name="btn_stop">Durdur (%1$d dk gecikmeli)</string>
+
+    <string name="diag_show">▸  Tanı</string>
+    <string name="diag_hide">▾  Tanı</string>
 
     <string name="label_profile">Mesaj profili</string>
     <string name="label_language">Dil</string>

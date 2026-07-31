@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Koyu zeminde acik tema renkleri okunmuyor; ayni isimler burada
+     acilarak veriliyor. Bkz. values/colors.xml -->
+<resources>
+    <color name="perde_on">#81C784</color>
+    <color name="perde_off">#EF9A9A</color>
+</resources>

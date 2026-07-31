@@ -248,8 +248,18 @@ object Motivation {
     // ===============================================================
     private var lastIndex = -1
 
+    /**
+     * Blok ekranına gidecek metin — üç parça AYRI dönüyor.
+     *
+     * Önceden hepsi tek stringde birleşip tek TextView'a basılıyordu;
+     * orijinal, çeviri ve referans aynı puntoda akınca göz hiçbirine
+     * tutunmuyordu. Overlay artık üçünü farklı ağırlıkta diziyor,
+     * o yüzden birleştirme burada değil, çizim tarafında yapılıyor.
+     */
+    data class Shown(val original: String, val body: String, val ref: String)
+
     /** Blok ekranında gösterilecek hazır metin. */
-    fun pick(ctx: Context): String {
+    fun pick(ctx: Context): Shown {
         val pool = when (getProfile(ctx)) {
             Profile.MUSLIM    -> MUSLIM
             Profile.CHRISTIAN -> CHRISTIAN
@@ -269,12 +279,10 @@ object Motivation {
         val lang = getLang(ctx)
         val body = if (lang == Lang.TR) e.tr else e.en
 
-        return buildString {
-            if (getShowOriginal(ctx) && e.original.isNotEmpty()) {
-                append(e.original).append("\n\n")
-            }
-            append(body)
-            if (e.ref.isNotEmpty()) append("\n\n— ").append(e.ref)
-        }
+        return Shown(
+            original = if (getShowOriginal(ctx)) e.original else "",
+            body = body,
+            ref = e.ref
+        )
     }
 }

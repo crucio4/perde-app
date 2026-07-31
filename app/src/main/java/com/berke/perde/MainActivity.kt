@@ -10,12 +10,20 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.view.View
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var status: TextView
+    private lateinit var statusHeader: TextView
+    private lateinit var statusHint: TextView
+    private lateinit var diagToggle: TextView
+    private lateinit var btnOverlayPerm: Button
+    private lateinit var btnUsagePerm: Button
+    private lateinit var btnA11yPerm: Button
+    private lateinit var btnStart: Button
     private lateinit var prefs: android.content.SharedPreferences
 
     override fun attachBaseContext(newBase: Context) {
@@ -53,6 +61,13 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
         prefs = getSharedPreferences("perde", Context.MODE_PRIVATE)
         status = findViewById(R.id.status)
+        statusHeader = findViewById(R.id.statusHeader)
+        statusHint = findViewById(R.id.statusHint)
+        diagToggle = findViewById(R.id.diagToggle)
+        btnOverlayPerm = findViewById(R.id.btnOverlayPerm)
+        btnUsagePerm = findViewById(R.id.btnUsagePerm)
+        btnA11yPerm = findViewById(R.id.btnA11yPerm)
+        btnStart = findViewById(R.id.btnStart)
 
         // Android 13+ POST_NOTIFICATIONS'i runtime izni yapti; manifestte
         // bildirmek yetmiyor.
@@ -82,18 +97,31 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        findViewById<Button>(R.id.btnOverlayPerm).setOnClickListener {
+        btnOverlayPerm.setOnClickListener {
             startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                 Uri.parse("package:$packageName")))
         }
-        findViewById<Button>(R.id.btnUsagePerm).setOnClickListener {
+        btnUsagePerm.setOnClickListener {
             startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
         }
-        findViewById<Button>(R.id.btnA11yPerm).setOnClickListener {
+        btnA11yPerm.setOnClickListener {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         }
-        findViewById<Button>(R.id.btnStart).setOnClickListener { start() }
-        findViewById<Button>(R.id.btnStop).setOnClickListener { requestStop() }
+        btnStart.setOnClickListener { start() }
+        findViewById<Button>(R.id.btnStop).apply {
+            text = getString(R.string.btn_stop, (Config.DISABLE_DELAY_MS / 60000).toInt())
+            setOnClickListener { requestStop() }
+        }
+
+        // Tani bolumu katli aciliyor. Acik/kapali secimi prefs'te tutuluyor:
+        // arizayi kovalarken izlenen uygulamaya gidip geri donmek gerekiyor
+        // ve her donusunde bolumu yeniden acmak zorunda kalmak isi
+        // gereksiz yavaslatiyordu.
+        diagToggle.setOnClickListener {
+            val acik = !prefs.getBoolean(KEY_DIAG_OPEN, false)
+            prefs.edit().putBoolean(KEY_DIAG_OPEN, acik).apply()
+            refresh()
+        }
     }
 
     private fun setupLanguage() {
@@ -226,12 +254,96 @@ class MainActivity : AppCompatActivity() {
     private fun refresh() {
         val overlayOk = Settings.canDrawOverlays(this)
         val usageOk = ForegroundAppWatcher(this).hasPermission()
+        val a11yOk = PerdeAccessibilityService.instance != null
+        // Ikisi ayri sorular: "acik birakilmis miydi" ve "su an fiilen
+        // calisiyor mu". Ustteki satir ikincisini gostermek zorunda.
+        val istendi = Guard.isEnabled(this)
+        val calisiyor = Guard.isRunning(this)
         val requestedAt = prefs.getLong(KEY_STOP_REQUEST, 0L)
+
+        updateHeader(calisiyor, istendi, overlayOk && usageOk, requestedAt)
+        updateSetup(overlayOk, usageOk, a11yOk, calisiyor)
+        updateDiagnostics()
+    }
+
+    /**
+     * Ekranin cevapladigi tek soru: koruma su an calisiyor mu?
+     *
+     * Bu satir eklenmeden once cevap tani blogunun 12. satirinda
+     * monospace icinde `koruma ACIK` diye duruyordu; kullanici bakip
+     * emin olamiyordu. Emin olamamak, uygulamayi birakma sebebi.
+     */
+    private fun updateHeader(
+        calisiyor: Boolean, istendi: Boolean, kurulumTamam: Boolean, requestedAt: Long
+    ) {
+        statusHeader.text = getString(if (calisiyor) R.string.status_on else R.string.status_off)
+        statusHeader.setTextColor(
+            getColor(if (calisiyor) R.color.perde_on else R.color.perde_off)
+        )
+        statusHint.text = when {
+            requestedAt != 0L ->
+                getString(R.string.status_hint_stopping, kalanSure(requestedAt))
+            calisiyor -> getString(R.string.status_hint_running)
+            // Acik birakilmis ama dongu ayakta degil. Kullanicinin
+            // korumasiz oldugunu bilmeden gezdigi tek durum bu; sessizce
+            // "kapali" demek yetmez, NEDEN kapali oldugu soylenmeli.
+            istendi -> getString(R.string.status_hint_stalled)
+            !kurulumTamam -> getString(R.string.status_hint_setup)
+            else -> getString(R.string.status_hint_ready)
+        }
+    }
+
+    private fun kalanSure(requestedAt: Long): String {
+        val sn = (Config.DISABLE_DELAY_MS - (System.currentTimeMillis() - requestedAt))
+            .coerceAtLeast(0) / 1000
+        return "%d:%02d".format(sn / 60, sn % 60)
+    }
+
+    private fun updateSetup(
+        overlayOk: Boolean, usageOk: Boolean, a11yOk: Boolean, calisiyor: Boolean
+    ) {
+        setupButton(btnOverlayPerm, overlayOk, R.string.setup_overlay)
+        setupButton(btnUsagePerm, usageOk, R.string.setup_usage)
+        setupButton(btnA11yPerm, a11yOk, R.string.setup_a11y)
+
+        // Koruma calisirken "Baslat" durursa ekran iki celiskili sey
+        // soyluyor. Calisirken gizli.
+        btnStart.visibility = if (calisiyor) View.GONE else View.VISIBLE
+    }
+
+    /**
+     * Verilmis izin sonuk ve ✓'li, eksik izin tam parlaklikta ve ○'li.
+     * Tiklanabilirlik ikisinde de duruyor: kullanici verdigi izni sistemde
+     * dogrulamak ya da geri almak isteyebilir.
+     */
+    private fun setupButton(b: Button, ok: Boolean, labelRes: Int) {
+        b.text = getString(
+            if (ok) R.string.setup_done else R.string.setup_todo, getString(labelRes)
+        )
+        b.alpha = if (ok) 0.55f else 1f
+    }
+
+    private fun updateDiagnostics() {
+        val acik = prefs.getBoolean(KEY_DIAG_OPEN, false)
+        diagToggle.text = getString(if (acik) R.string.diag_hide else R.string.diag_show)
+        status.visibility = if (acik) View.VISIBLE else View.GONE
+        // Kapaliyken metni kurmanin anlami yok — kirk kusur satirlik bir
+        // birlestirme ve her onResume'da calisiyor.
+        if (acik) status.text = buildDiagnostics()
+    }
+
+    /**
+     * Geliştirici tanısı. Katlı duruyor ama SILINMEDI: "bir kez blokladi,
+     * sonra hic tespit etmiyor" arizasinda gorunur tek kanit buydu.
+     */
+    private fun buildDiagnostics(): String {
+        val overlayOk = Settings.canDrawOverlays(this)
+        val usageOk = ForegroundAppWatcher(this).hasPermission()
         val h = Hassasiyet.aktif
 
         val d = getSharedPreferences(ScreenGuardService.DIAG_PREFS, Context.MODE_PRIVATE)
 
-        status.text = buildString {
+        return buildString {
             append("overlay      ").append(if (overlayOk) "OK" else "--").append('\n')
             append("usage stats  ").append(if (usageOk) "OK" else "--").append('\n')
             append("mode         ").append(Config.monitorMode).append('\n')
@@ -335,13 +447,9 @@ class MainActivity : AppCompatActivity() {
                 .append('\n')
             append("siniflar     ")
                 .append(d.getString(ScreenGuardService.D_MAX_PROBS, "-")).append('\n')
+            // Geri sayim artik ustteki durum satirinda; burada tekrari
+            // yalnizca iki yerde birden guncel tutma yuku demekti.
             append("             draw hent neut porn sexy")
-
-            if (requestedAt != 0L) {
-                val rem = (Config.DISABLE_DELAY_MS - (System.currentTimeMillis() - requestedAt))
-                    .coerceAtLeast(0) / 1000
-                append("\nstop in ").append(rem).append("s")
-            }
         }
     }
 
@@ -349,5 +457,6 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val KEY_STOP_REQUEST = "stop_requested_at"
+        private const val KEY_DIAG_OPEN = "diag_open"
     }
 }
