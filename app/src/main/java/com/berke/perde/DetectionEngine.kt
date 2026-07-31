@@ -139,6 +139,28 @@ class DetectionEngine {
         )
     }
 
+    /**
+     * Soğumayı dışarıdan başlatır.
+     *
+     * NEDEN GEREKLİ: blok ekranını döngü kaldırıyor (zorunlu süre
+     * dolunca) ve soğumayı da döngü tutuyor. Motorun kendi
+     * `cooldownUntil`'i yalnızca BLOCKED -> CLEAR geçişinde kuruluyordu,
+     * ama o geçiş hiç yaşanmıyor: overlay açıkken tick() en başta
+     * dönüyor, yani motor blok boyunca hiç güncellenmiyor ve sonunda
+     * reset() ile temizleniyor.
+     *
+     * Sonuç bir kilitlenmeydi: reset sonrası motor CLEAR oluyor, aynı
+     * içerik hâlâ ekranda olduğu için iki karede yeniden BLOCKED'a
+     * geçiyor, fakat döngü kendi soğuması dolmadığı için overlay'i
+     * açmıyor. Motor "ekransız BLOCKED"da asılı kalıyor ve oradan
+     * çıkmak için skorun düşmesini bekliyor — kullanıcı aynı sayfada
+     * olduğu için skor hiç düşmüyor. Uygulama oturum başına bir kez
+     * bloklayıp sessizce koruma bırakıyordu.
+     */
+    fun startCooldown(now: Long) {
+        cooldownUntil = now + Config.COOLDOWN_MS
+    }
+
     /** Uygulama değiştiğinde / yakalama durduğunda çağır. */
     fun reset() {
         window.clear()

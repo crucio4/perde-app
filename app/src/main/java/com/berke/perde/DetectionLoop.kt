@@ -131,7 +131,15 @@ class DetectionLoop(
      */
     private fun blokla(sebep: String) {
         val now = System.currentTimeMillis()
-        if (now < blockCooldownUntil) return
+        if (now < blockCooldownUntil) {
+            // Motor blok istedi ama ekranı açmıyoruz. Motoru BLOCKED'da
+            // bırakmak tam da kilitlenmeyi doğuruyordu: oradan çıkmak
+            // skorun düşmesine bağlı, kullanıcı aynı sayfada olduğu için
+            // skor düşmüyor ve tespit sessizce ölüyordu. İki durum ayrık
+            // kalmamalı — ekran açılmadıysa motor da blokta sayılmaz.
+            engine.reset()
+            return
+        }
         if (overlay.isShowing()) return
         overlayShownAt = now
         Log.i(TAG, "BLOK: $sebep")
@@ -139,9 +147,17 @@ class DetectionLoop(
     }
 
     private fun blogonKaldir(sebep: String) {
+        val now = System.currentTimeMillis()
         overlay.hide()
-        blockCooldownUntil = System.currentTimeMillis() + Config.COOLDOWN_MS
+        blockCooldownUntil = now + Config.COOLDOWN_MS
         engine.reset()
+        // Soğuma İKİ yerde birden bilinmeli. Motor bunu bilmezse reset
+        // sonrası aynı içerikte hemen BLOCKED'a geri dönüyor, döngü ise
+        // kendi soğuması yüzünden overlay'i açmıyor; motor ekransız
+        // BLOCKED'da kilitleniyor ve içerik değişmediği için oradan bir
+        // daha çıkamıyordu. Uygulama oturum başına bir kez bloklayıp
+        // sessizce koruma bırakıyordu.
+        engine.startCooldown(now)
         differ.reset()
         lastProbs = null
         lastEvidence = 1f
