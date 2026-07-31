@@ -343,8 +343,11 @@ class DetectionLoop(
         if (!appWatcher.shouldMonitor(pkg)) {
             if (source.isRunning()) sifirla("izlenmeyen paket: $pkg")
             lastWatchedPackage = null
-            // İzlenmeyen uygulamada hızlı örneklemenin karşılığı yok.
-            currentInterval = Adaptive.SLOW_INTERVAL_MS
+            // Örnekleme aralığına BİLEREK dokunulmuyor. Burada yavaşlatmak
+            // pil kazandırırdı ama izlenmeyen bir uygulamadan tarayıcıya
+            // dönüşü fark etmek 3 saniyeye kadar gecikebilirdi. Kapsamdan
+            // pil için taviz verilmiyor; aşağıdaki paket değişimi dalı
+            // zaten tam hıza geçiriyor.
             return
         }
 
